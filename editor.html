@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Editor de fases — The Lost Kings</title>
+<meta name="theme-color" content="#1d1916">
+<link rel="icon" type="image/png" href="icons/favicon-48.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Patrick+Hand&display=swap" rel="stylesheet">
+<style>
+  :root { --tinta: #2b1f2e; --papel: #fbf7ec; --ouro: #ffd23f; --fundo: #1d1916; --painel: #2c2521; --linha: #4a3f38; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--papel); overflow: hidden;
+    font: 17px "Patrick Hand", "Comic Sans MS", sans-serif; }
+  body { display: grid; grid-template: 58px 1fr 30px / 252px 1fr 270px; }
+  h1, h2, h3 { font-family: "Luckiest Guy", "Arial Black", sans-serif; font-weight: normal; letter-spacing: 0.5px; margin: 0; }
+  button { font: 15px "Luckiest Guy", "Arial Black", sans-serif; letter-spacing: 0.5px; color: var(--tinta); background: var(--papel);
+    border: 2.5px solid var(--tinta); border-radius: 8px; padding: 6px 11px 4px; cursor: pointer; box-shadow: 0 3px 0 var(--tinta);
+    transition: transform 0.06s; }
+  button:hover { background: #fff; }
+  button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--tinta); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.forte { background: var(--ouro); }
+  input, textarea { font: 17px "Patrick Hand", "Comic Sans MS", sans-serif; color: var(--tinta); background: var(--papel);
+    border: 2.5px solid var(--tinta); border-radius: 8px; padding: 3px 8px; }
+
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #3a2f29;
+    border-bottom: 3px solid var(--tinta); }
+  header h1 { color: #f1bf3a; font-size: 24px; margin-right: 6px; white-space: nowrap; }
+  header #nome { width: 230px; }
+  header .menu { color: #cbbfae; text-decoration: none; white-space: nowrap; }
+  header .menu:hover { color: #f1bf3a; }
+  dialog .minha { display: inline-flex; gap: 3px; }
+  dialog .minha .apaga { padding: 6px 8px 4px; }
+  header .sep { width: 1px; align-self: stretch; margin: 10px 2px; background: var(--linha); }
+  header .zoom { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  header label { display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+
+  aside { background: var(--painel); overflow-y: auto; padding: 8px 12px 16px; }
+  aside h3 { color: #f1bf3a; font-size: 15px; margin: 12px 0 6px; }
+  .pecas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .peca { position: relative; padding: 0; height: 66px; background: #f3efe2; box-shadow: 0 3px 0 var(--tinta); overflow: hidden; }
+  .peca canvas { width: 100%; height: 100%; display: block; }
+  .peca span { position: absolute; left: 3px; bottom: 1px; font: 13px "Patrick Hand", sans-serif; color: var(--tinta);
+    background: rgba(251,247,236,0.85); border-radius: 4px; padding: 0 3px; }
+  .peca.sel { outline: 4px solid var(--ouro); outline-offset: 1px; background: #fff6cf; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .chips button { font-size: 13px; padding: 3px 7px 1px; box-shadow: 0 2px 0 var(--tinta); }
+  .chips button.sel { background: var(--ouro); }
+  .chips[hidden] { display: none; }
+  .chips::before { content: attr(data-rotulo); width: 100%; font-size: 14px; color: #cbbfae; }
+
+  #area { position: relative; overflow: hidden; background: #2a231f; }
+  #area canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #guia { cursor: crosshair; touch-action: none; }
+  #msg { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); max-width: 80%; background: var(--papel);
+    color: var(--tinta); border: 2.5px solid var(--tinta); border-radius: 10px; padding: 5px 14px; pointer-events: none;
+    box-shadow: 0 4px 0 var(--tinta); opacity: 0; }
+  #msg.pisca { animation: some 5s forwards; }
+  @keyframes some { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+
+  .dir section { margin-bottom: 6px; }
+  .dir p { margin: 4px 0; color: #cbbfae; font-size: 15px; line-height: 1.2; }
+  .cruz { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; justify-content: start; align-items: center; margin-top: 6px; }
+  .cruz div { display: flex; gap: 3px; }
+  .cruz button { font-size: 13px; padding: 2px 7px 0; min-width: 28px; box-shadow: 0 2px 0 var(--tinta); }
+  .cruz em { font-style: normal; font-size: 14px; color: #cbbfae; text-align: center; }
+  #avisos { margin: 4px 0; padding-left: 18px; color: #ffb4a8; }
+  #avisos li { margin: 2px 0; }
+  #avisos .ok { color: #a6e3a1; list-style: '✔ '; }
+  #dicas { width: 100%; height: 90px; resize: vertical; font-size: 15px; }
+  #resultado { white-space: pre-wrap; font-size: 15px; margin-top: 6px; }
+  #resultado.ok { color: #a6e3a1; } #resultado.erro { color: #ffb4a8; }
+  .linha { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+  footer { grid-column: 1 / -1; display: flex; gap: 18px; align-items: center; padding: 0 14px; background: #3a2f29;
+    border-top: 3px solid var(--tinta); font-size: 15px; color: #d8cdbd; white-space: nowrap; overflow: hidden; }
+  footer #pos { min-width: 250px; color: var(--papel); }
+
+  dialog { background: var(--painel); color: var(--papel); border: 3px solid var(--tinta); border-radius: 14px; padding: 16px 20px;
+    width: min(560px, 92vw); box-shadow: 0 10px 0 var(--tinta); }
+  dialog::backdrop { background: rgba(10,8,6,0.6); }
+  dialog h2 { color: #f1bf3a; font-size: 24px; }
+  dialog h3 { color: #f1bf3a; font-size: 15px; margin: 14px 0 6px; }
+  dialog .lista { display: flex; flex-wrap: wrap; gap: 6px; }
+  dialog input[type=number] { width: 80px; }
+  dialog textarea { width: 100%; height: 70px; font-size: 13px; }
+  dialog .fecha { float: right; }
+</style>
+</head>
+<body>
+<header>
+  <a class="menu" href="index.html" title="Volta ao menu do jogo (a fase fica guardada como rascunho)">← Menu</a>
+  <h1>Editor de fases</h1>
+  <input id="nome" placeholder="Nome da fase" title="Nome da fase (com ele a fase fica em Minhas fases)">
+  <button id="b-novo">Novo</button>
+  <button id="b-abrir" title="Minhas fases, fases do jogo, tutorial, gerada">Abrir</button>
+  <button id="b-salvar" title="Guarda em Minhas fases, neste navegador; no PC, também em fases/ (Ctrl+S)">Salvar</button>
+  <button id="b-jogar" class="forte" title="Abre a fase no jogo, numa aba ao lado">▶ Jogar</button>
+  <span class="sep"></span>
+  <button id="b-desfaz" title="Desfazer (Ctrl+Z)">↶</button>
+  <button id="b-refaz" title="Refazer (Ctrl+Y)">↷</button>
+  <div class="zoom">
+    <label><input type="checkbox" id="c-grade" checked> grade</label>
+    <button id="b-menos" title="Afastar (roda do mouse)">−</button>
+    <button id="b-ajusta" title="A fase inteira na tela">ajustar</button>
+    <button id="b-mais" title="Aproximar (roda do mouse)">+</button>
+  </div>
+</header>
+
+<aside id="paleta"></aside>
+
+<main id="area">
+  <canvas id="fase"></canvas>
+  <canvas id="guia"></canvas>
+  <div id="msg"></div>
+</main>
+
+<aside class="dir">
+  <section>
+    <h3>Tamanho</h3>
+    <p id="tam"></p>
+    <div class="cruz">
+      <span></span><div><button data-lado="cima" data-d="1" title="Linha a mais em cima">+</button><button data-lado="cima" data-d="-1" title="Tira a linha de cima">−</button></div><span></span>
+      <div><button data-lado="esq" data-d="1" title="Coluna a mais à esquerda">+</button><button data-lado="esq" data-d="-1" title="Tira a coluna da esquerda">−</button></div>
+      <em>lados</em>
+      <div><button data-lado="dir" data-d="1" title="Coluna a mais à direita">+</button><button data-lado="dir" data-d="-1" title="Tira a coluna da direita">−</button></div>
+      <span></span><div><button data-lado="baixo" data-d="1" title="Linha a mais embaixo">+</button><button data-lado="baixo" data-d="-1" title="Tira a linha de baixo">−</button></div><span></span>
+    </div>
+  </section>
+  <section>
+    <h3>Conferência</h3>
+    <ul id="avisos"></ul>
+    <p id="origem"></p>
+  </section>
+  <section>
+    <h3>Robô</h3>
+    <div class="linha">
+      <button id="b-robo" title="O robô joga o roteiro da fase (rápido, sem desenhar)">Robô testa</button>
+      <button id="b-ver-robo" title="Abre o jogo com o robô jogando">Ver jogando</button>
+    </div>
+    <p id="sem-roteiro">Fase feita do zero não tem roteiro do robô: teste jogando (▶ Jogar). Retocou fase gerada ou do tutorial? O robô confere se ainda tem solução.</p>
+    <div id="resultado"></div>
+  </section>
+  <section>
+    <h3>Dicas na tela</h3>
+    <textarea id="dicas" placeholder="Uma dica por linha (aparecem no canto do jogo)"></textarea>
+    <p id="nota-dicas">Usando as dicas do gerador (uma por sala). Escrever aqui troca pelas suas, para a fase toda.</p>
+  </section>
+  <section>
+    <h3>Fiapo</h3>
+    <label class="linha">cordas no começo <input id="cordas" type="number" min="0" max="9" style="width:64px"></label>
+  </section>
+</aside>
+
+<footer>
+  <span id="pos"></span>
+  <span>esquerdo pinta · direito apaga · Shift+arrastar: retângulo · Alt+clique: pega a peça · espaço+arrastar: move · roda: zoom · tecla = letra da peça</span>
+</footer>
+
+<dialog id="dlg-abrir">
+  <button class="fecha">Fechar</button>
+  <h2>Abrir fase</h2>
+  <h3>Minhas fases (salvas neste navegador)</h3>
+  <div class="lista" id="lista-minhas"></div>
+  <h3>Fases do jogo</h3>
+  <div class="lista" id="lista-salvas"></div>
+  <h3>Tutorial (feitas à mão)</h3>
+  <div class="lista" id="lista-tutorial"></div>
+  <h3>Gerada (para retocar)</h3>
+  <div class="linha">fase nº <input type="number" id="ger-n" min="4" value="4"> semente <input type="number" id="ger-s" value="7">
+    <button id="b-gerada">Gerar e abrir</button></div>
+  <h3>Colar JSON</h3>
+  <textarea id="colar" placeholder='{"nome": "...", "mapa": ["....", "####"]}'></textarea>
+  <div class="linha" style="margin-top:6px"><button id="b-colar">Abrir o JSON</button></div>
+  <h3>Arquivo</h3>
+  <div class="linha"><button id="b-baixar" title="Baixa a fase aberta como arquivo .json (para levar para outro computador)">Baixar esta fase (.json)</button></div>
+</dialog>
+
+<script src="src/app.js"></script>
+<script src="src/util.js"></script>
+<script src="src/minhas.js"></script>
+<script src="src/estilo.js"></script>
+<script src="src/rig.js"></script>
+<script src="src/rosto.js"></script>
+<script src="src/cast.js"></script>
+<script src="src/desenho.js"></script>
+<script src="src/poses.js"></script>
+<script src="src/sprites.js"></script>
+<script src="src/objetos.js"></script>
+<script src="src/cenario.js"></script>
+<script src="src/salas.js"></script>
+<script src="src/nivel.js"></script>
+<script src="src/cordas.js"></script>
+<script src="src/heroi.js"></script>
+<script src="src/inimigos.js"></script>
+<script src="src/jogo.js"></script>
+<script src="src/bot.js"></script>
+<script src="src/gerador.js"></script>
+<script src="src/menu.js"></script>
+<script src="src/editor.js"></script>
+<script>
+  window.addEventListener('load', () => {
+    const pronto = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+    pronto.then(() => Ed.init());
+  });
+</script>
+</body>
+</html>
