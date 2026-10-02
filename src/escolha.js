@@ -17,9 +17,10 @@ const Escolha = {
   FIXAS: [
     { id: 'mesa', nome: 'A Mesa', sub: 'a fase 1 (a demo publicada)' },
     { id: 'mesa3', nome: 'A Mesa nova', sub: 'esboço 3, a fase 2 da demo: gangorra, carimbos e post-its (trena e estojo de zíper ainda provisórios)' },
-    { id: 'teste-gangorra', nome: 'Teste: gangorra', sub: 'a bundada do Pudim lança o Fiapo' },
-    { id: 'teste-carimbo', nome: 'Teste: carimbo', sub: 'passar por baixo no tempo certo' },
+    { id: 'teste-gangorra', nome: 'Teste: gangorra', sub: 'a bundada do Pudim lança o Fiapo em arco até a estante' },
+    { id: 'teste-carimbo', nome: 'Teste: carimbo', sub: 'por baixo no tempo certo, ou por cima; o lado é parede' },
     { id: 'teste-postits', nome: 'Teste: post-its', sub: 'o Fiapo sobe o zigue-zague' },
+    { id: 'teste-estante', nome: 'Teste: estante', sub: 'claro bloqueia, escuro passa; livros deitados de degrau; o livro-portão' },
   ],
   GERADAS: [4, 12], // fases geradas listadas (da 4 em diante saem do gerador), com a semente fixa
   SEMENTE: 7,

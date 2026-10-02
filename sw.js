@@ -5,12 +5,12 @@
 //    o jogo abriria o editor);
 // 2) já guarda na instalação as páginas, o código e as fases da demo (__ARQUIVOS__, a lista que o tools/monta_dist.js
 //    põe aqui); as imagens entram quando o jogo as carrega (ele carrega todas ao abrir).
-// O publicar.ps1 troca 2026.09.30-1733 pela versão: cada versão nova apaga o cache antigo.
-const VERSAO = '2026.09.30-1733';
+// O publicar.ps1 troca 2026.10.02-0019 pela versão: cada versão nova apaga o cache antigo.
+const VERSAO = '2026.10.02-0019';
 // vários jogos podem morar no mesmo site (ex.: guheck.github.io/jogo-a e /jogo-b): o nome do cache leva o endereço do jogo
 const PREFIXO = `jogo:${self.registration.scope}:`;
 const CACHE = PREFIXO + VERSAO;
-const ARQUIVOS = ['./', './index.html'].concat(["./src/escolha.js","./src/app.js","./src/util.js","./src/minhas.js","./src/estilo.js","./src/rig.js","./src/rosto.js","./src/cast.js","./src/desenho.js","./src/poses.js","./src/sprites.js","./src/objetos.js","./src/cenario.js","./src/salas.js","./src/nivel.js","./src/cordas.js","./src/heroi.js","./src/inimigos.js","./src/som.js","./src/musica.js","./src/jogo.js","./src/bot.js","./src/gerador.js","./src/menu.js","./src/toque.js","./src/editor.js","./fases/mesa.json","./fases/mesa3.json","./editor.html","./manifest.webmanifest","./icons/icon-192.png","./icons/icon-512.png","./icons/favicon-48.png"]);
+const ARQUIVOS = ['./', './index.html'].concat(["./src/escolha.js","./src/app.js","./src/util.js","./src/minhas.js","./src/estilo.js","./src/rig.js","./src/rosto.js","./src/cast.js","./src/desenho.js","./src/poses.js","./src/sprites.js","./src/objetos.js","./src/cenario.js","./src/salas.js","./src/nivel.js","./src/cordas.js","./src/heroi.js","./src/inimigos.js","./src/som.js","./src/musica.js","./src/jogo.js","./src/bot.js","./src/gerador.js","./src/menu.js","./src/toque.js","./src/editor.js","./src/editor-sel.js","./fases/mesa.json","./fases/mesa3.json","./editor.html","./manifest.webmanifest","./icons/icon-192.png","./icons/icon-512.png","./icons/favicon-48.png"]);
 // fontes do Google usadas pelos jogos: também ficam guardadas (senão, sem internet, o texto muda de fonte)
 const FORA = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
 

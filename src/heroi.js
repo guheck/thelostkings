@@ -32,6 +32,7 @@ const POCA = { cola: 0.3, colaInimigo: 0.2, arranca: 500, atrito: 60 };
 // normal (senão os pulos ficavam mais longos e dava para pular os buracos que pedem corda).
 const CORRIDA = { toques: 0.3, vezes: 1.7 };
 const V_BARRIGA = Math.sqrt(2 * GRAV * 250);
+const V_PISAO = Math.sqrt(2 * GRAV * 44); // quique do Fiapo na cabeça do inimigo (_pisao)
 const MAOS = 62; // altura das mãos acima dos pés quando escala
 const NEUTRO = {};
 const FALA_CORDA = {
@@ -74,6 +75,15 @@ class Heroi {
   muda(e) { this.antes = this.estado; this.tAntes = this.tEst; this.estado = e; this.tEst = 0; }
   diz(texto, dur = 1.3) { if (texto) this.fala = { texto, t: 0, dur }; this.contaFalas++; }
   caixa() { const c = this.cfg; return { x0: this.x - c.w / 2, y0: this.y - c.h, x1: this.x + c.w / 2, y1: this.y }; }
+  // Nasce fora da parede: o Pudim (72 px) não cabe num bloco (40); no bloco colado na parede, nasce encostado nela
+  encaixa(n) {
+    const w = this.cfg.w / 2, topo = this.y - this.cfg.h + 4, pe = this.y - 2;
+    const ce = Math.floor((this.x - w) / TILE), cd = Math.floor((this.x + w) / TILE);
+    if (bloqueado(n, ce, topo, pe)) this.x = (ce + 1) * TILE + w + 0.01;
+    else if (bloqueado(n, cd, topo, pe)) this.x = cd * TILE - w - 0.01;
+    this.seguro = { x: this.x, y: this.y };
+    return this;
+  }
 
   // ---------------------------------------------------------------------------
   atualiza(dt, ent, M) {
@@ -88,7 +98,7 @@ class Heroi {
 
     if (this.estado === 'caido') return; // sem coração: fica caído (a fase recomeça)
     if (this.estado === 'escalando') return this._escala(dt, E, M);
-    if (this.estado === 'escada') return this._escada(dt, E);
+    if (this.estado === 'escada') return this._escada(dt, E, M);
     if (this.estado === 'rolando') return this._rola(dt, E, M);
     if (this.estado === 'machucado') {
       this.vy = Math.min(QUEDA_MAX, this.vy + GRAV * dt);
@@ -133,7 +143,8 @@ class Heroi {
       const d = Math.sign(baixo.x - alto.x);
       this.vx = U.clamp(this.vx + d * GRAV * Math.sin(s.ang) * Math.cos(s.ang) * 0.9 * dt, -460, 460);
       this.f = d;
-    } else if (this.estado !== 'arremessado' && this.estado !== 'bundada' && !(this.empurrado > 0)) { // empurrado: vai com o tranco
+    } else if (this.estado !== 'arremessado' && this.estado !== 'bundada' && !(this.empurrado > 0) // empurrado: vai com o tranco
+      && !(this.lancado && !this.noChao && !alvo)) { // lançado pela gangorra: sem comando, segue o arco até pousar
       // no corretivo quase não tem atrito: embalado, segue deslizando (parado, dá para começar a andar devagar)
       const acc = (!this.noChao ? 1700 : piso !== 'w' ? 2600 : Math.abs(this.vx) < 40 ? POCA.arranca : POCA.atrito) * dt;
       this.vx += U.clamp(alvo - this.vx, -acc, acc);
@@ -197,12 +208,15 @@ class Heroi {
         this._pisaPlataforma(yAntes, !noArAntes, M);
       }
       if (this.estado === 'bundada' && this.vy > 0) this._amassa(yAntes, M);
+      if (this.id === 'fiapo') this._pisao(yAntes, M);
     }
+    if (this.noChao) this.lancado = false;
     if (this.noChao && noArAntes) this._pousou(M);
     else if (!this.noChao && this.estado === 'chao') this.muda('ar');
+    if (n.carimbos.length && this._carimbos(M)) return;
 
     const cx = this.caixa();
-    if (n.perigo(cx.x0 + 4, cx.y0, cx.x1 - 4, cx.y1) || this.y > n.altura + 150) this._machuca(M);
+    if (n.perigo(cx.x0 + 4, cx.y0, cx.x1 - 4, cx.y1, true) || this.y > n.altura + 150) this._machuca(M);
     else if (this.estado === 'chao' && this.noChao && !this.apoio && !n.perigo(cx.x0 - 30, cx.y0, cx.x1 + 30, cx.y1 + 45) && !n.sobCarimbo(cx.x0 - 30, cx.x1 + 30, cx.y1)
       && !(M.inimigos || []).some((o) => o.vivo && Math.abs(o.x - this.x) < 170 && Math.abs(o.y - this.y) < 90)) {
       this.seguro = { x: this.x, y: this.y }; // ponto seguro para reaparecer (longe de lápis e de inimigo)
@@ -248,16 +262,35 @@ class Heroi {
     }
   }
 
-  // Bundada: amassa só quem está EMBAIXO — o traseiro do Pudim passa pela cabeça do inimigo caindo. Pulando do chão
-  // ele só sobe ~46 px: amassa a borracha (baixinha); guarda e escudeiro, só caindo de um lugar mais alto.
-  // O grampeador é de metal.
+  // Bundada: pega só quem está EMBAIXO — o traseiro do Pudim passa pela cabeça do inimigo caindo. Pulando do chão
+  // ele só sobe ~46 px: alcança a borracha (baixinha); os outros, só caindo de um lugar mais alto. Amassa só a
+  // borracha; nos outros, PLAFT e zonzo 3 s (01/10, equilíbrio: quem derruba é o Marreta).
   _amassa(yAntes, M) {
     for (const o of M.inimigos || []) {
-      if (!o.vivo || o.especie === 'grampeador') continue;
-      const topo = o.y - o.cfg.h, meio = (this.cfg.w + o.cfg.w) / 2 - 6;
-      if (yAntes <= topo + 4 && this.y >= topo && Math.abs(o.x - this.x) < meio) {
-        o.derrota(0, M, 'PLAFT!', 0, true); // achatado no lugar
+      if (!o.vivo) continue;
+      const topo = o.y - Math.max(o.cfg.cabeca, o.cfg.h), meio = (this.cfg.w + o.cfg.w) / 2 - 6; // (cabeça desenhada ou caixa: pega antes de encostar)
+      if (yAntes < topo && this.y >= topo && Math.abs(o.x - this.x) < meio) { // (passa a linha uma vez só)
+        if (o.especie === 'borracha') o.derrota(0, M, 'PLAFT!', 0, true); // achatada no lugar
+        else o.atordoa(M, 3, 'PLAFT!');
         M.tremer(8);
+      }
+    }
+  }
+
+  // Pisão do Fiapo (01/10, usuário: "o Fiapo sozinho com inimigo... o timing é bem judioso"): caindo em cima da cabeça
+  // de um inimigo, quica (sobe 44 px: menos que o pulo dele, não abre atalho) e o inimigo fica zonzo 2 s — dá para
+  // passar. Não derruba ninguém (quem derruba é o Marreta).
+  _pisao(yAntes, M) {
+    if (this.id !== 'fiapo' || this.estado !== 'ar' || this.vy <= 0) return;
+    for (const o of M.inimigos || []) {
+      if (!o.vivo) continue;
+      const topo = o.y - Math.max(o.cfg.cabeca, o.cfg.h), meio = (this.cfg.w + o.cfg.w) / 2 - 6; // (cabeça desenhada ou caixa: pega antes de encostar)
+      if (yAntes <= topo + 4 && this.y >= topo && Math.abs(o.x - this.x) < meio) {
+        this.y = topo; this.vy = -V_PISAO; this.noChao = false; this.apoio = null;
+        this.squash = 0.3;
+        o.atordoa(M, 2, 'PÓIN!');
+        M.som && M.som('pulo', { id: this.id });
+        return;
       }
     }
   }
@@ -307,7 +340,10 @@ class Heroi {
     for (const g of gs) {
       const ys = g.superficie(this.x);
       if (ys == null) continue;
-      const caindo = yAntes <= ys + 2 && this.y >= ys - 1;
+      // (a plataforma se mexe depois dos heróis: se ela subiu desde o quadro passado, o pé pode já estar abaixo dela —
+      // conta onde ela estava, senão quem cai numa ponta que sobe atravessa a régua)
+      const ya = g.superficieAntes ? g.superficieAntes(this.x) : null;
+      const caindo = yAntes <= Math.max(ys, ya ?? ys) + 2 && this.y >= ys - 1;
       const junto = estava === g && Math.abs(this.y - ys) < 24;
       const degrau = tinhaChao && estava !== g && ys < this.y && ys >= this.y - GANGORRA.degrau;
       if (!caindo && !junto && !degrau) continue;
@@ -316,6 +352,36 @@ class Heroi {
       if (!tinhaChao && estava !== g) g.pousa(this, v, M);
       return;
     }
+  }
+
+  // Carimbo (30/09, usuário: "encostar do lado não deveria te tirar a vida, deveria funcionar como uma parede"): o
+  // corpo é sólido. Do lado, empurra para fora (parede); em cima, é plataforma (Heroi._pisaPlataforma; espremido no teto
+  // quando ele sobe: Carimbo.atualiza); embaixo, é teto — e só machuca ESPREMIDO: ele descendo em cima de quem está no
+  // chão. Devolve true se machucou.
+  _carimbos(M) {
+    const w = this.cfg.w / 2;
+    for (const k of M.nivel.carimbos) {
+      if (this.plat === k) continue;
+      const b = k.caixa(), antes = k.caixaAntes(), topo = this.y - this.cfg.h;
+      if (!(this.x + w > b.x0 && this.x - w < b.x1 && this.y > b.y0 + 2 && topo < b.y1)) continue; // não encosta
+      const entra = Math.min(this.x + w - b.x0, b.x1 - (this.x - w)); // quanto entrou pelo lado mais perto
+      if (topo >= antes.y1 - 3 && entra > CARIMBO.pega) { // já estava embaixo dele: o carimbo desceu em cima
+        if (this.noChao) { M.registra(`${this.id} espremido embaixo do carimbo`); this._espremido(M, k); return true; }
+        this.y = b.y1 + this.cfg.h; this.vy = Math.max(this.vy, 0); // pulando: bate a cabeça
+        continue;
+      }
+      this.x = this.x < k.x ? b.x0 - w : b.x1 + w; // do lado: parede
+      if (Math.sign(this.vx) === Math.sign(k.x - this.x)) this.vx = 0;
+    }
+    return false;
+  }
+  // espremido pelo carimbo k (embaixo dele ou em cima, contra o teto): perde o coração e sai para o lado mais perto,
+  // sem o pulinho do machucado (espremido no teto, o pulinho o jogava para dentro do teto e ele aparecia em cima dele)
+  _espremido(M, k) {
+    const b = k.caixa(), w = this.cfg.w / 2;
+    this._machuca(M);
+    this.vy = 0; this.plat = null; this.noChao = false;
+    this.x = this.x < k.x ? b.x0 - w - 1 : b.x1 + w + 1;
   }
 
   // Cordas de escalar: a que dá para agarrar daqui, e a que está perto (para andar até ela)
@@ -463,11 +529,18 @@ class Heroi {
     M.registra(`${this.id}: agarrou a escada no ar`);
     return true;
   }
-  _escada(dt, E) {
+  _escada(dt, E, M) {
     const L = this.escada;
     const dir = (E.cima ? 1 : 0) - (E.baixo ? 1 : 0);
     this.y -= dir * this.cfg.sobe * (dir > 0 ? 1.5 : 2.2) * dt;
     this.x = L.x;
+    // subindo, a cabeça para no teto: a escada não leva até onde ele não cabe em pé (01/10: a escada do duto da trena,
+    // com 120 px em cima — o Pudim, 106, fica de pé e vira bola; o Fiapo, 132, ficava com a cabeça dentro do porta-lápis)
+    if (dir > 0 && M) {
+      const n = M.nivel, x0 = Math.floor((this.x - this.cfg.w / 2 + 2) / TILE), x1 = Math.floor((this.x + this.cfg.w / 2 - 2) / TILE);
+      const l = Math.floor((this.y - this.cfg.h) / TILE);
+      for (let c = x0; c <= x1; c++) if (n.solido(c, l)) { this.y = (l + 1) * TILE + this.cfg.h; break; }
+    }
     if (dir) this.fase += dt * 9;
     if (E.dir) this.f = 1;
     if (E.esq) this.f = -1;
@@ -634,6 +707,9 @@ class Heroi {
       // Acerta TUDO o que a luva encosta (29/09, usuário: "se encostou tinha que funcionar"): o amigo encostado na parede
       // fraca voa e a parede quebra junto. Só a régua do escudeiro segura o soco reto (e o que está atrás dela).
       const ini = this.inimigoNaFrente(M.inimigos, golpe);
+      if (ini && ini.cfg.blindado) { // a lata do blindado: nem o soco nem o gancho (só cair derruba)
+        ini.clang(M); this.vx = -this.f * 260; this.diz('Ai, a lata!'); return;
+      }
       if (ini && ini.escudoPara(this.x) && reto) { // soco reto na régua: não adianta (o gancho vem de baixo e derruba)
         M.fx('TOC!', ini.x + ini.f * 40, ini.y - 60, '#e9c77a', 1.1); // na régua
         ini.tBloqueio = M.t;
@@ -800,9 +876,9 @@ function moveX(h, n, dt) {
   if (bloqueado(n, c, h.y - hh + 4, h.y - 2) || paredeDeRampa(n, c, xb, s, h.y - hh + 4, h.y - 2)) {
     // degrau baixinho (ex.: saindo da ponte de corda para o chão): sobe em vez de parar
     const topo = Math.floor((h.y - 2) / TILE) * TILE;
-    if (h.noChao && topo >= h.y - 14 && !bloqueado(n, c, topo - hh + 4, topo - 2)) { h.y = topo; h.x = nx; empurraDurex(h, n); return; }
+    if (h.noChao && topo >= h.y - 14 && !bloqueado(n, c, topo - hh + 4, topo - 2)) { h.y = topo; h.x = nx; empurraDurex(h, n); empurraEstojo(h, n); return; }
     // subindo a rampa: o meio dos pés ainda está nela e a frente do corpo já passa por cima do bloco onde ela acaba
-    if (h.noChao && n.inclinacao(h.x, h.y) === s && topo >= h.y - w / 2 - 4 && !bloqueado(n, c, topo - hh + 4, topo - 2)) { h.x = nx; empurraDurex(h, n); return; }
+    if (h.noChao && n.inclinacao(h.x, h.y) === s && topo >= h.y - w / 2 - 4 && !bloqueado(n, c, topo - hh + 4, topo - 2)) { h.x = nx; empurraDurex(h, n); empurraEstojo(h, n); return; }
     h.x = s > 0 ? c * TILE - w / 2 - 0.01 : (c + 1) * TILE + w / 2 + 0.01;
     h.vx = 0;
     if (h instanceof Heroi && h.noChao && travaAlto(h, n, c)) h.trava = s;
@@ -810,6 +886,26 @@ function moveX(h, n, dt) {
   }
   h.x = nx;
   empurraDurex(h, n);
+  empurraEstojo(h, n);
+}
+
+// Estojo de zíper no caminho (ESTOJO): só o Marreta (no chão, andando) empurra, devagar; os outros, a bola do Pudim,
+// inimigo e quem está no ar param nele — o herói no chão faz força (a pose de empurrar). Em cima dele não conta (é piso).
+function empurraEstojo(h, n) {
+  if (h.eEstojo || !n.estojos || !n.estojos.length || !h.vx) return;
+  const w = h.cfg.w, hh = h.cfg.h, s = Math.sign(h.vx), lim = ESTOJO.w / 2 + w / 2;
+  for (const e of n.estojos) {
+    if (h.y <= e.topo() + 4 || h.y - hh >= e.y) continue;
+    const d = e.x - h.x;
+    if (Math.abs(d) >= lim || Math.sign(d) !== s) continue;
+    // degrau baixinho (o estojo no fosso): sobe, já um pouco em cima dele (pisar pede o pé 8 px para dentro da beirada)
+    if (h.noChao && h.y - e.topo() <= 14) { h.y = e.topo(); h.x = e.x - s * (lim - 10); continue; }
+    const heroi = h instanceof Heroi, marreta = heroi && h.id === 'marreta' && h.noChao && h.estado === 'chao' && e.noChao && e.travado !== s;
+    if (marreta) { const v = h.cfg.vel * ESTOJO.empurra; e.vx = s * v; h.vx = s * Math.min(Math.abs(h.vx), v); }
+    else { h.vx = 0; h.bateuDurex = true; }
+    if (heroi && h.noChao) h.trava = s;
+    h.x = e.x - s * lim;
+  }
 }
 
 // Rolo de durex no caminho: herói no chão empurra (a bola do Pudim, com tudo: boliche); rolo travado desse lado (na
@@ -852,14 +948,26 @@ function moveY(h, n, dt) {
         if (r !== h && Math.abs(h.x - r.x) < (DUREX.w + w) / 2 - 8 && yAntes <= topo + 0.5 && ny >= topo) { ny = topo; h.vy = 0; h.noChao = true; break; }
       }
     }
+    // em cima de um estojo de zíper (é piso)
+    if (!h.noChao && n.estojos && n.estojos.length) {
+      for (const e of n.estojos) {
+        const topo = e.topo();
+        if (e !== h && Math.abs(h.x - e.x) < (ESTOJO.w + w) / 2 - 8 && yAntes <= topo + 0.5 && ny >= topo) { ny = topo; h.vy = 0; h.noChao = true; break; }
+      }
+    }
     // topo de escada é piso (↓ passa, para descer por ela)
     if (!h.noChao && !h.seguraBaixo && n.escadas.length) {
       const yt = n.topoEntre(h.x - w / 2 + 2, h.x + w / 2 - 2, yAntes, ny);
       if (yt != null) { ny = yt; h.vy = 0; h.noChao = true; }
     }
   } else {
+    // teto: só o bloco que estava ACIMA da cabeça. Encostado de lado numa parede (o Pudim, 72 px, nascia 16 px dentro
+    // dela), o bloco da parede não é teto: antes empurrava o herói para baixo do chão (30/09, usuário: "o Pudim entra
+    // debaixo do piso e fica travado")
     const l = Math.floor((ny - hh) / TILE);
-    for (let c = c0; c <= c1; c++) if (n.solido(c, l) || n.rampa(c, l)) { ny = (l + 1) * TILE + hh; h.vy = 0; break; }
+    for (let c = c0; c <= c1; c++) {
+      if ((n.solido(c, l) || n.rampa(c, l)) && yAntes - hh >= (l + 1) * TILE - 1) { ny = (l + 1) * TILE + hh; h.vy = 0; break; }
+    }
   }
   h.y = ny;
 }

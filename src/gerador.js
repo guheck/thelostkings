@@ -62,7 +62,7 @@ const NOMES = {
 };
 // Nomes engraçados de lugar (a papelaria é grande)
 const LUGARES = ['na Gaveta', 'no Estojo', 'na Estante', 'no Fichário', 'na Mochila', 'no Porta-Lápis', 'na Caixa de Clipes', 'no Caderno'];
-const LUTA = { guarda: ['marreta', 'soca'], escudeiro: ['marreta', 'soca'], borracha: ['pudim', 'bundada'], grampeador: ['pudim', 'rebate'], lixeira: ['marreta', 'cesta'], tesoureiro: ['pudim', 'rolaEm'] };
+const LUTA = { guarda: ['marreta', 'soca'], escudeiro: ['marreta', 'soca'], borracha: ['pudim', 'bundada'], grampeador: ['pudim', 'rebate'], lixeira: ['marreta', 'cesta'], tesoureiro: ['marreta', 'soca'] };
 const GRUPO = ['fiapo', 'marreta', 'pudim'];
 
 // Uma tentativa de fase: planta, travas, mapa e o roteiro do robô
@@ -634,7 +634,7 @@ class Obra {
       if (e.item) this.busca(e, i);
       this.cruza(e, i);
       const s = this.salas[this.cam[i + 1]];
-      if (s.inimigo) this.luta(s);
+      if (s.inimigo) this.luta(s, this.cam[i + 1]);
       if (e.recolhe) { // todos subiram: o Fiapo recolhe a corda do poço e leva para a próxima
         this.leva('fiapo', this.cam[i + 1], X(e.pin));
         this.rot.push(['acao'], ['espera', 0.5]);
@@ -844,11 +844,17 @@ class Obra {
     GRUPO.forEach((id, k) => { if (this.pos[id].s !== para) this.leva(id, para, this.xLivre(T, base + dir * (30 + 60 * k))); });
   }
 
-  luta(s) {
-    const [quem, op] = LUTA[s.inimigo.especie];
+  luta(s, si) {
+    const [quem, op] = LUTA[s.inimigo.especie], faixa = [s.c0 * TILE, (s.c1 + 1) * TILE], meio = (s.inimigo.x0 + s.inimigo.x1) / 2;
+    if (s.inimigo.especie === 'tesoureiro') { // o Pudim de escudo: a tesoura quica na barriga (preso) e o Marreta derruba
+      if (this.pos.marreta.s !== si) this.leva('marreta', si);
+      this.ativa('pudim');
+      this.rot.push(['barriga', ...faixa]);
+      this.pos.pudim.x = meio;
+    }
     this.ativa(quem);
-    this.rot.push([op, s.c0 * TILE, (s.c1 + 1) * TILE], ['esperaChao', quem, 3], ['espera', 0.3]);
-    this.pos[quem].x = (s.inimigo.x0 + s.inimigo.x1) / 2;
+    this.rot.push([op, ...faixa], ['esperaChao', quem, 3], ['espera', 0.3]);
+    this.pos[quem].x = meio;
     for (const c of s.inimigo.cols) s.perigo.delete(c);
     s.inimigo = null;
   }

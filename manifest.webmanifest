@@ -3,7 +3,7 @@
   "short_name": "Lost Kings",
   "description": "Três trapalhões com coroa de papel: troque de herói e resolvam juntos as fases da papelaria.",
   "lang": "pt-BR",
-  "id": "./",
+  "id": "/thelostkings/",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

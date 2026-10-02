@@ -17,13 +17,19 @@
 // Caixas conferidas com os desenhos (28/09): a régua do escudeiro vai a 44 px do pé (a caixa ia só a 22: o herói
 // entrava na régua antes do empurrão); borracha e grampeador do tamanho do desenho. O guarda fica um pouco mais estreito
 // que o desenho (o lápis tem que alcançar mais que o soco do Marreta).
+// cabeca: topo do desenho parado no meio (±16 px, sem a ponta do lápis), medido no tamanho do jogo (01/10): onde o pisão
+// do Fiapo e a bundada do Pudim pegam e onde giram as estrelinhas do zonzo.
 const CFG_INIMIGO = {
-  guarda: { w: 38, h: 96, vel: 70 },
-  escudeiro: { w: 70, h: 98, vel: 55 },
-  borracha: { w: 60, h: 36, vel: 190 },
-  grampeador: { w: 64, h: 44, vel: 0, intervalo: 1.7 },
-  tesoureiro: { w: 40, h: 96, vel: 0 },
-  lixeira: { w: 50, h: 56, vel: 0, intervalo: 2.2 }, // caixa pelo desenho: cesto 46-54 de largura, aro a 46 px, papel até 57
+  guarda: { w: 38, h: 96, vel: 70, cabeca: 107 },
+  escudeiro: { w: 70, h: 98, vel: 55, cabeca: 110 },
+  borracha: { w: 60, h: 36, vel: 190, cabeca: 35 },
+  grampeador: { w: 64, h: 44, vel: 0, intervalo: 1.7, cabeca: 34 },
+  tesoureiro: { w: 40, h: 96, vel: 0, cabeca: 107 },
+  lixeira: { w: 50, h: 56, vel: 0, intervalo: 2.2, cabeca: 62 }, // caixa pelo desenho: cesto 46-54 de largura, aro a 46 px, papel até 57
+  // Blindado (01/10, usuário: "por que derrubar da régua se pode simplesmente matar? Tem que ser invencível, com armadura"):
+  // soldadinho de lata de corda; nada o derruba (CLANG) — só cair (lápis, fosso, a trena recolhida). Caixa pelo desenho
+  // da IA (folha blindado-1): a lata de -27 a 23 px do meio, a tampinha até 110 px do pé.
+  blindado: { w: 50, h: 104, vel: 50, cabeca: 110, blindado: true },
 };
 // Lixeira: vê herói até 280 px na horizontal (qualquer altura abaixo dela), avisa 0,35 s e joga a bolinha mirando o
 // peito dele, com tempo de voo de 0,7 a 1,3 s (gravidade da bolinha: 1300). Rebatida, volta num arco que cai dentro
@@ -37,7 +43,7 @@ function arcoBolinha(M, x0, y0, tx, ty, T) {
   while (vao < 400 && !M.nivel.solidoEm(x0, y0 - vao - L.raio - 4)) vao += 4;
   const V = Math.sqrt(2 * L.g * vao), tTeto = (V + Math.sqrt(Math.max(0, V * V + 2 * L.g * (ty - y0)))) / L.g;
   T = Math.max(0.3, Math.min(T, tTeto));
-  return { vx: (tx - x0) / T, vy: (ty - y0) / T - 0.5 * L.g * T };
+  return { vx: (tx - x0) / T, vy: (ty - y0) / T - 0.5 * L.g * T, T };
 }
 // Tesoureiro (soldado da tesoura): de guarda parado, olhando para um lado e para o outro (vira a cada 2,6 s). Vê herói
 // na frente (até 240 px, na mesma altura, sem parede no meio): arma 0,4 s (aviso: abre e fecha a tesoura) e CORRE a
@@ -81,6 +87,10 @@ class Inimigo {
       return;
     }
     const n = M.nivel;
+    // zonzo (o pisão do Fiapo, a bola ou a bundada do Pudim: atordoa): parado, sem atacar
+    const zonzo = this.zonzo > 0 && this.especie !== 'tesoureiro';
+    if (zonzo) { this.zonzo -= dt; this.golpe = null; this.jogando = null; this.recarga = Math.max(this.recarga, 0.5); }
+    if (zonzo && (this.especie === 'lixeira' || this.especie === 'grampeador')) return;
     if (this.especie === 'lixeira') { this._lixeira(dt, M); return; }
     if (this.especie === 'grampeador') {
       this.boca = Math.max(0, this.boca - dt * 4);
@@ -94,7 +104,7 @@ class Inimigo {
       return;
     }
     if (this.especie === 'tesoureiro') this._tesoura(dt, M);
-    else if (this._lanca(dt, M)) this.vx = 0; // estocando ou tonto: fica no lugar
+    else if (zonzo || this._lanca(dt, M)) this.vx = this.kb || 0; // zonzo, estocando ou tonto: no lugar (a bola empurra)
     else {
       // patrulha: vira na beirada, na parede ou no fim do trecho. Na cola anda devagar; no corretivo escorrega: só
       // vira na parede (na beirada, cai)
@@ -107,6 +117,7 @@ class Inimigo {
       this.bateuDurex = false;
       this.vx = this.f * this.cfg.vel * (piso === 'k' ? POCA.colaInimigo : 1);
     }
+    if (this.kb) { this.kb *= Math.max(0, 1 - dt * 5); if (Math.abs(this.kb) < 8) this.kb = 0; }
     this.dist += Math.abs(this.vx) * dt;
     this.vy = Math.min(QUEDA_MAX, this.vy + GRAV * dt);
     const corria = this.modo === 'corre' && this.vx !== 0;
@@ -114,13 +125,39 @@ class Inimigo {
     moveY(this, n, dt);
     // correndo, bateu o corpo (mureta mais baixa que a tesoura, durex): para ali mesmo
     if (corria && (this.vx === 0 || this.bateuDurex)) this._prende(M, 'cravado', 'TÓIN!');
-    if (n.perigo(this.x - this.cfg.w / 2, this.y - this.cfg.h, this.x + this.cfg.w / 2, this.y, true) || this.y > n.altura + 100) this.derrota(0, M, 'PLOC!');
+    if (n.perigo(this.x - this.cfg.w / 2, this.y - this.cfg.h, this.x + this.cfg.w / 2, this.y, true) || this.y > n.altura + 100) this.derrota(0, M, 'PLOC!', -680, false, true);
+  }
+
+  // Zonzo (01/10, equilíbrio — usuário: "o Pudim tá muito forte... sai rolando, invulnerável, mata todos os inimigos";
+  // "o Fiapo [sozinho]... o timing é bem judioso"): o pisão do Fiapo, a bola e a bundada do Pudim deixam o inimigo zonzo
+  // s segundos — parado, estrelinhas, não ataca, encostar não machuca e o escudo cai (qualquer golpe derruba) — mas
+  // não matam: quem derrota é o Marreta (e a bundada na borracha). kb: o empurrão da bola (vai parando). O tesoureiro
+  // fica preso tonto (o mesmo de quando a tesoura quica na barriga).
+  atordoa(M, s, texto = '', kb = 0) {
+    if (!this.vivo) return;
+    if (this.cfg.blindado) { this.clang(M); return; } // (a lata: nem zonzo)
+    if (this.especie === 'tesoureiro') { if (!(this.preso > 0)) this._prende(M, 'tonto', ''); }
+    else this.zonzo = Math.max(this.zonzo || 0, s);
+    this.kb = this.especie === 'tesoureiro' ? 0 : kb;
+    if (texto) M.fx(texto, this.x, this.y - this.cfg.cabeca - 46, '#fffdf6', 0.9); // (acima das estrelinhas)
+    M.registra(`${this.especie} zonzo`);
   }
 
   // vy: para onde voa (o gancho do Marreta manda para o alto; o soco reto, para longe). amassado (bundada): fica
   // achatado no lugar e some.
-  derrota(vx, M, texto, vy = -680, amassado = false) {
+  // A lata do blindado: o golpe bate e não faz nada
+  clang(M) {
+    if (M.t - (this.tClang ?? -9) < 0.25) return;
+    this.tClang = M.t; this.tBloqueio = M.t;
+    M.fx('CLANG!', this.x, this.y - this.cfg.h - 10, '#c9cfd6', 0.9);
+    M.tremer(3);
+    M.registra('blindado: CLANG (não adianta)');
+  }
+
+  // perigo: caiu nos lápis ou para fora da fase (a única coisa que derruba o blindado)
+  derrota(vx, M, texto, vy = -680, amassado = false, perigo = false) {
     if (!this.vivo) return;
+    if (this.cfg.blindado && !perigo) { this.clang(M); return; }
     this.vivo = false;
     this.morte = amassado ? { vx: 0, vy: 0, rot: 0, vr: 0, t: 0, amassado: true }
       : { vx: vx || (this.f * -200), vy, rot: 0, vr: (Math.sign(vx) || 1) * 9, t: 0 };
@@ -136,8 +173,11 @@ class Inimigo {
     const G = ESTOCADA;
     if (this.tonto > 0) { this.tonto -= dt; return true; }
     if (!this.golpe) {
+      // (e o estojo de zíper vindo para cima dele: estoca nele — TOC — e é empurrado do mesmo jeito)
       const ve = M.herois.some((h) => alvoDoGuarda(h) && Math.sign(h.x - this.x) === this.f
-        && Math.abs(h.x - this.x) < G.ve && Math.abs(h.y - this.y) < 40);
+        && Math.abs(h.x - this.x) < G.ve && Math.abs(h.y - this.y) < 40)
+        || (M.nivel.estojos || []).some((e) => M.t - (e.tAndou ?? -9) < 0.3 && e.anda === -this.f && Math.abs(e.y - this.y) < 40
+          && this.f * ((this.f > 0 ? e.caixa().x0 : e.caixa().x1) - this.x) > 0 && Math.abs((this.f > 0 ? e.caixa().x0 : e.caixa().x1) - this.x) < G.ve - 60);
       if (!ve) return false;
       this.golpe = { t: 0, acertou: false };
     }
@@ -147,11 +187,15 @@ class Inimigo {
     if (!g.acertou && g.t >= G.arma && g.t < G.arma + G.estica) {
       const a = this.x + this.f * 10, b = this.x + this.f * G.alcance; // da mão até a ponta, na altura do peito
       const x0 = Math.min(a, b), x1 = Math.max(a, b), y0 = this.y + G.y0, y1 = this.y + G.y1;
-      for (const h of M.herois) {
+      // o estojo de zíper no meio: a ponta bate nele (TOC) e não chega em ninguém
+      const est = (M.nivel.estojos || []).find((e) => { const k = e.caixa(); return k.x0 < x1 && k.x1 > x0 && k.y0 < y1 && k.y1 > y0; });
+      if (est) { g.acertou = true; M.fx('TOC!', this.f > 0 ? est.caixa().x0 : est.caixa().x1, this.y - 60, '#e9c77a', 0.8); M.registra('lápis bateu no estojo'); }
+      for (const h of (est ? [] : M.herois)) {
         const c = h.caixa();
         if (!alvoDoGuarda(h) || c.x0 >= x1 || c.x1 <= x0 || c.y0 >= y1 || c.y1 <= y0) continue;
         g.acertou = true;
-        if (h.id === 'pudim') { // barriga: a ponta quebra (impacto segurado com o mundo parado, susto, e aí tonto)
+        if (h.id === 'pudim' && h.estado !== 'rolando') { // barriga: a ponta quebra (impacto segurado, susto, tonto);
+          // (rolando, a ponta fura a bola: TUC, como nos outros — 01/10)
           this.tonto = G.tonto; this.golpe = null; this.tQuebrou = M.t;
           M.parada = Math.max(M.parada, 0.1); M.tremer(6);
           h.squash = 0.4;
@@ -179,9 +223,9 @@ class Inimigo {
         this.jogando = null; this.recarga = this.cfg.intervalo; this.tJogou = M.t;
         const h = this.alvoLixeira(M);
         if (h) {
-          const x0 = this.x + this.f * 12, y0 = this.y - this.cfg.h + 4, tx = h.x, ty = h.y - h.cfg.h * 0.6;
-          const v = arcoBolinha(M, x0, y0, tx, ty, U.clamp(Math.hypot(tx - x0, ty - y0) / 420, 0.7, 1.3));
+          const { x0, y0, tx, ty, T } = this.miraLixeira(h), v = arcoBolinha(M, x0, y0, tx, ty, T);
           M.bolinhas.push({ x: x0, y: y0, vx: v.vx, vy: v.vy, dono: this, rebatida: false, vida: 4, giro: 0 });
+          M.registra(`lixeira joga em ${h.id}`);
           M.som('arremesso');
         }
       }
@@ -189,11 +233,30 @@ class Inimigo {
     }
     const h = this.alvoLixeira(M);
     if (h) this.f = Math.sign(h.x - this.x) || this.f;
-    if (h && this.recarga <= 0) this.jogando = 0;
+    if (h && this.recarga <= 0) { this.jogando = 0; M.fx('!', h.x, h.y - h.cfg.h - 26, '#f2553d', 1.1); } // (avisa quem vai levar)
   }
+  // Alvo (30/09, usuário: "visibilidade"; "o jeito que ela escolhe o alvo não está legal"): só quem a bolinha ALCANÇA —
+  // o arco de ida passa livre até o peito dele (embaixo de laje ou atrás de parede alta, está a salvo; por cima de
+  // mureta o arco passa, como antes) — e ela fica no mesmo alvo enquanto ele estiver ao alcance; só troca quando ele se
+  // esconde ou sai. Antes: o mais perto em x, trocando a toda hora, e mirando até em quem estava embaixo de laje.
   alvoLixeira(M) {
-    return M.herois.filter((h) => alvoDoGuarda(h) && Math.abs(h.x - this.x) < LIXEIRA.ve && h.y > this.y - 40)
-      .sort((p, q) => Math.abs(p.x - this.x) - Math.abs(q.x - this.x))[0] || null;
+    const ok = (h) => alvoDoGuarda(h) && Math.abs(h.x - this.x) < LIXEIRA.ve && h.y > this.y - 40 && this.arcoLivre(M, h);
+    if (!(this.alvo && ok(this.alvo))) {
+      this.alvo = M.herois.filter(ok).sort((p, q) => Math.abs(p.x - this.x) - Math.abs(q.x - this.x))[0] || null;
+    }
+    return this.alvo;
+  }
+  miraLixeira(h) {
+    const f = Math.sign(h.x - this.x) || this.f, x0 = this.x + f * 12, y0 = this.y - this.cfg.h + 4, tx = h.x, ty = h.y - h.cfg.h * 0.6;
+    return { x0, y0, tx, ty, T: U.clamp(Math.hypot(tx - x0, ty - y0) / 420, 0.7, 1.3) };
+  }
+  // o arco até o herói passa sem bater em nada? (a mesma conta do arremesso, ponto a ponto, como a bolinha voa)
+  arcoLivre(M, h) {
+    const L = LIXEIRA, { x0, y0, tx, ty, T } = this.miraLixeira(h), v = arcoBolinha(M, x0, y0, tx, ty, T);
+    for (let t = 0.04; t < v.T - 0.08; t += 0.03) {
+      if (M.nivel.solidoEm(x0 + v.vx * t, y0 + v.vy * t + 0.5 * L.g * t * t)) return false;
+    }
+    return true;
   }
 
   // Tesoureiro (TESOURA): de guarda, arma, corre sem frear; preso (cravado, grudado ou tonto) não ataca
@@ -221,6 +284,7 @@ class Inimigo {
         return this._prende(M, 'cravado', 'CRAVOU!');
       }
       if ((n.durex || []).some((r) => Math.hypot(r.x - xn, r.y - DUREX.r - yp) < DUREX.r)) return this._prende(M, 'cravado', 'CRAVOU!');
+      if ((n.estojos || []).some((e) => { const k = e.caixa(); return xn > k.x0 && xn < k.x1 && yp > k.y0 && yp < k.y1; })) return this._prende(M, 'cravado', 'CRAVOU!');
       if (this.noChao && n.piso(this.x, this.y) === 'k') return this._prende(M, 'grudado', 'GRUDOU!');
       this._cortaCorda(M, xp, yp, dt);
       // quem a tesoura pega: a barriga do Pudim devolve (BOING, tonto); nos outros, TSC! (a bola do Pudim e o amigo
@@ -283,7 +347,7 @@ class Inimigo {
   }
 
   // O escudo está virado para quem vem de x?
-  escudoPara(x) { return this.especie === 'escudeiro' && Math.sign(x - this.x) === this.f; }
+  escudoPara(x) { return this.especie === 'escudeiro' && !(this.zonzo > 0) && Math.sign(x - this.x) === this.f; }
   caixa() { const c = this.cfg; return { x0: this.x - c.w / 2, y0: this.y - c.h, x1: this.x + c.w / 2, y1: this.y }; }
 
   // Quadro do desenho da IA para o estado do inimigo: { anim, i }; null = desenho por código
@@ -323,6 +387,12 @@ class Inimigo {
       if (t - this.tEmpurrou < 0.35) return Q('empurra');
       if (t - this.tVirou < 0.2) return Q('vira');
     }
+    if (esp === 'blindado') { // caindo da fita, CLANG (golpe ou bola), empurrando quem encosta; parado, desconfia
+      if (!this.noChao) return Q('cai');
+      if (t - (this.tClang ?? -9) < 0.3) return Q('clang');
+      if (t - this.tEmpurrou < 0.3) return Q('empurra');
+      if (!this.vx && this.t % 6 < 0.9) return Q('olha');
+    }
     if (esp === 'borracha' && t - this.tQuica < 0.3) return Q('quica');
     if (esp === 'grampeador') {
       if (this.boca > 0.7) return Q('atira');
@@ -330,7 +400,7 @@ class Inimigo {
       if (this.recarga < 0.35) return Q('arma');
       return this.t % 6 < 0.9 ? Q('desconfia') : toca('parado', this.t);
     }
-    if (this.vx && A.anda) return Q('anda', Math.floor(this.dist / A.anda.passo) % A.anda.quadros.length);
+    if (this.vx && A.anda && !(this.zonzo > 0)) return Q('anda', Math.floor(this.dist / A.anda.passo) % A.anda.quadros.length);
     if (esp === 'escudeiro' && this.t % 3.5 < 0.14) return Q('pisca');
     return Q('parado') || Q('freia') || Q('anda');
   }
@@ -343,17 +413,43 @@ class Inimigo {
       ctx.globalAlpha = U.clamp(1.4 - this.morte.t, 0, 1);
       if (!this.morte.amassado) { ctx.translate(0, -this.cfg.h / 2); ctx.rotate(this.morte.rot); ctx.translate(0, this.cfg.h / 2); }
     }
+    const zonzo = this.vivo && this.zonzo > 0;
+    ctx.save();
+    if (zonzo) ctx.rotate(Math.sin(this.t * 7) * 0.07); // zonzo: balança em cima dos pés
     const Q = Sprites.pronto(this.especie) && this._quadro(t);
-    if (Q) { Sprites.quadro(ctx, this.especie, Q, { f: this.f, pe: { x: 0, y: 0 } }); ctx.restore(); return; }
-    ctx.scale(this.f, 1);
-    const passo = this.vx ? Math.sin(this.t * 10) : 0;
-    const esp = this.especie;
-    if (esp === 'guarda' || esp === 'escudeiro') this._soldado(ctx, passo, esp === 'escudeiro');
-    else if (esp === 'tesoureiro') this._tesoureiro(ctx);
-    else if (esp === 'borracha') this._borracha(ctx);
-    else if (esp === 'lixeira') this._cesto(ctx);
-    else this._grampeador(ctx);
+    if (Q) Sprites.quadro(ctx, this.especie, Q, { f: this.f, pe: { x: 0, y: 0 } });
+    else {
+      ctx.save();
+      ctx.scale(this.f, 1);
+      const passo = this.vx ? Math.sin(this.t * 10) : 0;
+      const esp = this.especie;
+      if (esp === 'guarda' || esp === 'escudeiro') this._soldado(ctx, passo, esp === 'escudeiro');
+      else if (esp === 'tesoureiro') this._tesoureiro(ctx);
+      else if (esp === 'borracha') this._borracha(ctx);
+      else if (esp === 'lixeira') this._cesto(ctx);
+      else if (esp === 'blindado') this._blindado(ctx, passo);
+      else this._grampeador(ctx);
+      ctx.restore();
+    }
+    if (zonzo) this._estrelas(ctx, -this.cfg.cabeca - 12);
     ctx.restore();
+    ctx.restore();
+  }
+
+  // estrelinhas de 5 pontas girando em cima da cabeça (zonzo): as de trás menores, como um anel visto de lado
+  _estrelas(ctx, y) {
+    for (let i = 0; i < 3; i++) {
+      const a = this.t * 5 + (i * U.TAU) / 3, r = 6.5 + Math.sin(a) * 1.5;
+      Estilo.forma(ctx, (c) => {
+        const x0 = Math.cos(a) * 22, y0 = y + Math.sin(a) * 6;
+        c.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const ang = -Math.PI / 2 + (k * Math.PI) / 5, rr = k % 2 ? r * 0.45 : r;
+          c.lineTo(x0 + Math.cos(ang) * rr, y0 + Math.sin(ang) * rr);
+        }
+        c.closePath();
+      }, { cor: '#ffd23f' }, { elev: 0, linha: 1.8, cel: false });
+    }
   }
 
   _olhos(ctx, x, y, r, bravo = true) {
@@ -429,6 +525,21 @@ class Inimigo {
         Estilo.forma(ctx, (c) => U.circulo(c, Math.cos(a) * 16, -116 + Math.sin(a) * 4, 3.5), { cor: '#ffd23f' }, { elev: 0, linha: 1.5, cel: false });
       }
     }
+  }
+
+  // Blindado (desenho por código): o soldadinho dentro de uma lata de lápis de metal — só as pernas embaixo e os olhos
+  // bravos na fresta; CLANG: a lata treme
+  _blindado(ctx, passo) {
+    for (const [dx, k] of [[-9, passo], [9, -passo]]) {
+      Estilo.forma(ctx, (c) => U.retRed(c, dx - 6, -26 + Math.max(0, k) * -5, 12, 26, 5), { cor: '#2b2b3a' }, { elev: 1, linha: 2.5 });
+    }
+    Estilo.forma(ctx, (c) => U.retRed(c, -22, -96, 44, 74, 8), { cor: '#9aa3ad' }, { elev: 2, linha: 3.5 });
+    Estilo.forma(ctx, (c) => U.retRed(c, -14, -92, 8, 66, 4), { cor: '#d7dde3', luz: false }, { elev: 0, linha: 0, cel: false }); // brilho
+    for (const y of [-40, -60]) Estilo.traco(ctx, (c) => { c.beginPath(); c.moveTo(-22, y); c.lineTo(22, y); }, '#6c747d', 2.5, { elev: 0 }); // frisos
+    Estilo.forma(ctx, (c) => U.retRed(c, -24, -100, 48, 10, 4), { cor: '#7d868f' }, { elev: 1, linha: 2.5 }); // a borda de cima
+    Estilo.forma(ctx, (c) => U.retRed(c, -16, -84, 32, 12, 4), { cor: '#1d1622' }, { elev: 0, linha: 2, cel: false }); // a fresta
+    this._olhos(ctx, 2, -78, 3.6);
+    for (const x of [-16, 16]) Estilo.forma(ctx, (c) => U.circulo(c, x, -50, 2.2), { cor: '#c9cfd6' }, { elev: 0, linha: 1, cel: false }); // rebites
   }
 
   // Lixeira (desenho por código): cesto azul com papel saindo; armando, inclina para trás com a bolinha em cima

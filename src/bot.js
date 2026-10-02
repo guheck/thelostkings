@@ -8,7 +8,10 @@
 //           ['segura', tecla, s] ['espera', s] ['esperaChao', id, limite]
 //           ['sobe'] / ['desce'] (segura ↑/↓ até terminar a escada ou a corda)
 //           ['rola', x] (Pudim: vira bola andando, rola até x, freia e levanta)
-//           ['soca' | 'bundada' | 'rolaEm' | 'rebate', x0, x1] (luta com o inimigo entre x0 e x1)
+//           ['soca' | 'bundada' | 'barriga' | 'rebate', x0, x1] (luta com o inimigo entre x0 e x1; barriga: o Pudim
+//           desarma o guarda ou o tesoureiro e fica de escudo na frente — quem derruba é o Marreta)
+//           ['pisa', espécie, x] (Fiapo: pula na cabeça do inimigo — ele fica zonzo — e segue até x)
+//           ['empurra', x] (Marreta: empurra o estojo de zíper até o meio dele chegar em x; para se ele cair ou travar)
 //           ['desvia', espécie, x] (quem não luta pula por cima no caminho até x) ['espreita', espécie, x, ±1] (espera o
 //           inimigo passar por x indo naquele sentido)
 //           ['bundadaEm', xPulo, x] (Pudim: anda para x, pula ao passar de xPulo e dá a bundada em cima de x: gangorra)
@@ -23,7 +26,7 @@ class Bot {
     const [op, a, b, c] = this.r[this.i];
     const h = J.heroi;
     // a bola do Pudim deixada para trás continua bola: antes de seguir o roteiro, ele levanta
-    if (h.id === 'pudim' && h.estado === 'rolando' && !['rola', 'rolaEm', 'espera', 'esperaChao', 'ativa', 'marca', 'rolo', 'acao', 'pula'].includes(op)) {
+    if (h.id === 'pudim' && h.estado === 'rolando' && !['rola', 'espera', 'esperaChao', 'ativa', 'marca', 'rolo', 'acao', 'pula'].includes(op)) {
       if (h.noChao && Math.abs(h.vx) < 30) E.acao = true;
       return E;
     }
@@ -46,7 +49,10 @@ class Bot {
     } else if (op === 'bundadaEm') {
       const d = b - h.x;
       if (this.pulou && h.noChao && h.estado === 'chao') feito = true;
-      else if (h.noChao && h.estado === 'chao') { E[d > 0 ? 'dir' : 'esq'] = true; if ((a - h.x) * Math.sign(d) <= 0) { E.pulo = true; this.pulou = true; } }
+      else if (h.noChao && h.estado === 'chao') { // (já em cima do alvo: pula sem andar — andando, passava dele)
+        if (Math.abs(d) > 6) E[d > 0 ? 'dir' : 'esq'] = true;
+        if (Math.abs(d) <= 6 || (a - h.x) * Math.sign(d) <= 0) { E.pulo = true; this.pulou = true; }
+      }
       else if (h.estado === 'ar') { if (Math.abs(d) > 6) E[d > 0 ? 'dir' : 'esq'] = true; if (Math.abs(d) < 16 && h.vy > -80) E.acao = true; }
       if (this.tCmd > 8) feito = true;
     } else if (op === 'pulaEm') {
@@ -90,11 +96,12 @@ class Bot {
       else if (h.noChao && h.estado === 'chao') { E[dir > 0 ? 'dir' : 'esq'] = true; if (this.tCmd > 0.08) E.acao = true; }
       if (this.tCmd > 14) feito = true;
     }
-    else if (op === 'soca' || op === 'bundada' || op === 'rolaEm' || op === 'rebate') {
+    else if (op === 'soca' || op === 'bundada' || op === 'barriga' || op === 'rebate') {
       // luta com o inimigo vivo mais perto à frente (a partir de x = a, se dado)
       // (bundada pulando do chão só amassa a borracha: guarda e escudeiro, só caindo de cima)
-      const tipos = { soca: ['guarda', 'escudeiro', 'tesoureiro'], bundada: ['borracha'], rolaEm: ['guarda', 'tesoureiro'], rebate: ['grampeador'] }[op];
-      const x0 = a != null ? a : h.x - 60, x1 = b != null ? b : Infinity;
+      const tipos = { soca: ['guarda', 'escudeiro', 'tesoureiro'], bundada: ['borracha'], barriga: ['guarda', 'tesoureiro'], rebate: ['grampeador'] }[op];
+      // (100 px de folga: o tesoureiro que quica na barriga voa ~75 px para trás e pode sair da faixa da sala)
+      const x0 = a != null ? a - 100 : h.x - 60, x1 = b != null ? b + 100 : Infinity;
       const alvo = J.inimigos.filter((o) => o.vivo && tipos.includes(o.especie) && o.x > x0 && o.x < x1 && Math.abs(o.y - h.y) < 120)
         .sort((p, q) => Math.abs(p.x - h.x) - Math.abs(q.x - h.x))[0];
       if (!alvo || this.tCmd > 25) feito = true;
@@ -106,21 +113,29 @@ class Bot {
           // baixo da régua); de costas, soco.
           const G = ESTOCADA, golpe = alvo.escudoPara(h.x) ? 'gancho' : 'soco';
           const lapis = alvo.especie === 'guarda' && alvo.golpe && alvo.golpe.t < G.arma + G.estica;
-          // tesoureiro solto e virado para ele: espera (a tesoura chega antes da luva); preso, vai e soca
-          const tesoura = alvo.especie === 'tesoureiro' && !(alvo.preso > 0) && Math.sign(h.x - alvo.x) === alvo.f;
+          // tesoureiro solto e virado para ele: espera (a tesoura chega antes da luva); preso, vai e soca — se der tempo de
+          // chegar antes de ele soltar (perto e sem tempo, espera atrás do escudo: o Pudim)
+          const chega = Math.max(0, Math.abs(d) - 80) / h.cfg.vel + 0.15;
+          const tesoura = alvo.especie === 'tesoureiro' && Math.sign(h.x - alvo.x) === alvo.f
+            && (!(alvo.preso > 0) || (alvo.preso < chega && Math.abs(d) < TESOURA.ve + 60));
           if (lapis) { if (Math.abs(d) < G.alcance + 50) E[dir > 0 ? 'esq' : 'dir'] = true; } // recua da estocada
           else if (tesoura) { /* parado */ }
           else if (h.f !== dir) E[dir > 0 ? 'dir' : 'esq'] = true;
           else if (h.inimigoNaFrente([alvo], golpe)) {
             if (this.recarga <= 0) { E.acao = true; E.baixo = golpe === 'gancho'; this.recarga = 0.5; }
           } else E[dir > 0 ? 'dir' : 'esq'] = true;
-        } else if (op === 'rolaEm') { // boliche: a bola só derruba desarmado — antes vai de barriga (quebra o lápis, a
-          // tesoura quica e ele fica tonto); aí vira bola e vai para cima dele
-          E[dir > 0 ? 'dir' : 'esq'] = true;
+        } else if (op === 'barriga') { // Pudim de escudo: chega perto (sem encostar: pelas costas a ponta machuca) e
+          // espera ele vir — o lápis quebra na barriga, a tesoura quica. Desarmado, fica ali na frente.
           const desarmado = (alvo.especie === 'guarda' && alvo.tonto > 0) || (alvo.especie === 'tesoureiro' && alvo.preso > 0);
-          if (desarmado && h.estado === 'chao' && h.noChao && this.recarga <= 0) { E.acao = true; this.recarga = 0.4; }
+          if (desarmado) feito = true;
+          else if (Math.abs(d) > (alvo.cfg.w + h.cfg.w) / 2 + 40) E[dir > 0 ? 'dir' : 'esq'] = true;
+          else if (h.f !== dir) E[dir > 0 ? 'dir' : 'esq'] = true;
         } else if (op === 'bundada') { // pula e, lá em cima, E: bundada
           const vem = Math.sign(alvo.vx || -dir) === -dir;
+          // presa (contra a parede ela quica na barriga e fica sempre a 68 px, fora do alcance da bundada): no ar, se ajeita
+          // em cima dela. Andando, não: ela vem para baixo dele
+          const parada = Math.abs(alvo.x - (this.xAlvo ?? alvo.x)) < 0.5; this.xAlvo = alvo.x;
+          if (!h.noChao && parada && Math.abs(d) > 8) E[dir > 0 ? 'dir' : 'esq'] = true;
           if (h.estado === 'ar' && this.bundar && h.vy > -120) { E.acao = true; this.bundar = false; }
           else if (h.noChao && h.estado === 'chao' && Math.abs(d) < (vem ? 150 : 80) && this.recarga <= 0) { E.pulo = true; this.bundar = true; this.recarga = 1.3; }
           else if (h.noChao && Math.abs(d) > 60 && !(vem && Math.abs(d) < 220)) E[dir > 0 ? 'dir' : 'esq'] = true;
@@ -192,6 +207,33 @@ class Bot {
         if (h.noChao && o.f * (borda - ponta) < 90) E.pulo = true;
       } else if (o.modo !== 'arma' && a != null && Math.abs(a - h.x) > 6) E[a > h.x ? 'dir' : 'esq'] = true;
     }
+    else if (op === 'pisa') { // Fiapo: pula e cai na cabeça do inimigo (espécie a) — ele fica zonzo — e segue até b. Do
+      // guarda, fica fora do lápis enquanto ele arma e estoca; pula de onde o pulo desce em cima da cabeça dele
+      const d = b - h.x, dir = Math.sign(d) || 1, vai = (x) => { if (Math.abs(x - h.x) > 4) E[x > h.x ? 'dir' : 'esq'] = true; };
+      const o = J.inimigos.filter((q) => q.vivo && q.especie === a && Math.sign(q.x - h.x) === dir && Math.abs(q.y - h.y) < 60)
+        .sort((p, q) => Math.abs(p.x - h.x) - Math.abs(q.x - h.x))[0];
+      const v0 = Math.sqrt(2 * GRAV * h.cfg.pulo), cai = o ? Math.max(0, h.cfg.pulo - Math.max(o.cfg.cabeca, o.cfg.h)) : 0;
+      const alcance = h.cfg.vel * (v0 / GRAV + Math.sqrt(2 * cai / GRAV)); // do pulo até a descida passar pela cabeça
+      if (Math.abs(d) < 8 || this.tCmd > 25) feito = true;
+      else if (!h.noChao) { if (o && !(o.zonzo > 0) && !this.pisou) vai(o.x); else vai(b); }
+      else if (!o || o.zonzo > 0) { this.pisou = !!o; vai(b); }
+      else {
+        // (onde ele vai estar quando a descida passar pela cabeça: andando, ele sai do lugar)
+        const dx = Math.abs(o.x + o.vx * (alcance / h.cfg.vel) - h.x), G = ESTOCADA, g = a === 'guarda' && o.golpe;
+        if (g && g.t < G.arma + G.estica) { if (Math.abs(o.x - h.x) < G.alcance + 70) E[dir > 0 ? 'esq' : 'dir'] = true; } // recua da estocada
+        else { vai(b); if (dx <= alcance) E.pulo = true; }
+      }
+    }
+    else if (op === 'empurra') { // o Marreta empurra o estojo de zíper até o meio dele chegar em a (ou cair, ou travar)
+      const e = (J.nivel.estojos || []).slice().sort((p, q) => Math.abs(p.x - h.x) - Math.abs(q.x - h.x))[0];
+      if (!e || this.tCmd > 30) feito = true;
+      else {
+        if (this.yEstojo == null) this.yEstojo = e.y;
+        const d = a - e.x, dir = Math.sign(d) || 1;
+        if (Math.abs(d) < 4 || e.y > this.yEstojo + 20 || (e.travado === dir && this.tCmd > 1)) feito = true;
+        else E[dir > 0 ? 'dir' : 'esq'] = true;
+      }
+    }
     else if (op === 'espreita') { // espera o inimigo (espécie a) passar por b indo no sentido c (ex.: a borracha indo embora)
       const o = J.inimigos.filter((q) => q.vivo && q.especie === a).sort((p, q) => Math.abs(p.x - h.x) - Math.abs(q.x - h.x))[0];
       feito = !o || this.tCmd > 20 || (o.f === c && c * (o.x - b) >= 0 && c * (o.x - b) < 40);
@@ -207,7 +249,7 @@ class Bot {
       const o = J.herois.find((x) => x.id === a);
       feito = (o.estado === 'chao' && o.noChao && !o.apoio) || this.tCmd > (b || 6);
     }
-    if (feito) { this.i++; this.tCmd = 0; this.tPulo = -1; this.subiu = false; this.recarga = 0; this.preso = 0; this.rolou = false; this.bundar = false; this.saltou = false; this.pulou = false; }
+    if (feito) { this.i++; this.tCmd = 0; this.tPulo = -1; this.subiu = false; this.recarga = 0; this.preso = 0; this.rolou = false; this.bundar = false; this.saltou = false; this.pulou = false; this.pisou = false; this.xAlvo = null; this.yEstojo = null; }
     return E;
   }
 }
@@ -323,6 +365,35 @@ const DEGRAU = [
   '################################', '################################', '################################',
 ];
 
+// Estojo de zíper (01/10): chão reto com um fosso de lápis de 5 blocos e 2 de fundo (colunas 10-14) e a saída do outro lado; o estojo
+// na coluna 22, os heróis atrás dele (Marreta na frente); guarda (opcional) entre o estojo e o fosso, olhando para eles
+const ESTOJO_FOSSO = (guarda) => {
+  const L = [];
+  for (let l = 0; l < 15; l++) L.push('.'.repeat(32).split(''));
+  for (let c = 0; c < 32; c++) for (let l = 12; l < 15; l++) L[l][c] = '#';
+  for (let c = 10; c <= 14; c++) { L[12][c] = '.'; L[13][c] = '^'; }
+  for (let l = 9; l <= 11; l++) { L[l][1] = 'S'; L[l][2] = 'S'; }
+  L[11][22] = 'E'; L[11][27] = '1'; L[11][29] = '2'; L[11][30] = '3';
+  return { nome: 'teste: estojo e fosso', mapa: L.map((r) => r.join('')), inimigos: guarda ? [{ especie: 'guarda', x: 700, y: 480, f: 1, alcance: 30 }] : [] };
+};
+// Trena com o blindado (01/10, usuário: o inimigo da fita tem que ser invencível e o botão do outro lado — "só o
+// Pudim, passando por um buraco menor, rolando, chega do outro lado, encolhe a régua e depois ativa de novo para os
+// outros"): vão de 9 blocos (colunas 10-18) com lápis embaixo e a fita esticada, a trena na beira de LÁ (coluna 9), o
+// blindado patrulhando na fita, um duto de 2 blocos (80 px: só a bola) por cima da ponte, com escada até a boca dele;
+// heróis à direita, saída à esquerda. O teto do duto fica baixo: ninguém pula por cima do blindado.
+const TRENA_BLINDADO = () => {
+  const L = [];
+  for (let l = 0; l < 15; l++) L.push('.'.repeat(32).split(''));
+  for (let c = 0; c < 32; c++) for (let l = 12; l < 15; l++) L[l][c] = '#';
+  for (let c = 10; c <= 18; c++) { L[12][c] = '.'; L[13][c] = '^'; }
+  // o duto: teto e chão (o chão dele a 200 px do chão da fase: em cima da caixa da trena cabe o Fiapo, 132 px — com
+  // 160 ele batia a cabeça e travava; e o pulo por cima do blindado continua batendo no duto)
+  for (let c = 4; c <= 21; c++) { L[3][c] = '#'; L[6][c] = '#'; }
+  for (let l = 6; l <= 11; l++) { L[l][22] = 'H'; L[l][23] = 'H'; } // escada até a boca do duto
+  for (let l = 9; l <= 11; l++) { L[l][1] = 'S'; L[l][2] = 'S'; }
+  L[11][9] = 'R'; L[11][27] = '1'; L[11][29] = '2'; L[11][30] = '3';
+  return { nome: 'teste: trena e blindado', mapa: L.map((r) => r.join('')), inimigos: [{ especie: 'blindado', x: 560, y: 480, f: 1, alcance: 100 }] };
+};
 // Poça (cola "kk" ou nada "..") de 2 blocos logo antes de um degrau de 1 bloco; a saída em cima do degrau
 const POCA_DEGRAU = (p) => ({ nome: 'teste: poça antes do degrau', mapa: [
   '................................', '................................', '................................',
@@ -492,21 +563,50 @@ const TESTES = [
     ],
   },
   {
-    // a estocada na barriga do Pudim quebra a ponta: o guarda fica tonto e o Pudim rola nele
-    nome: 'barriga do Pudim quebra o lápis do guarda', def: comInimigo('guarda', 620, -1, 60),
-    deve: [/ponta do lápis quebrou/], nunca: [/pudim: -1/],
+    // a estocada na barriga do Pudim quebra a ponta: o guarda fica tonto e o Marreta (esperando atrás) derruba
+    nome: 'barriga do Pudim quebra o lápis do guarda; o Marreta derruba', def: comInimigo('guarda', 620, -1, 60),
+    deve: [/ponta do lápis quebrou/, /guarda derrotado/], nunca: [/: -1 /],
     r: [
-      ['ativa', 'pudim'], ['anda', 560], ['rolaEm', 400, 900], ['esperaChao', 'pudim', 3], // anda para dentro da estocada
-      ['anda', 1110], ['ativa', 'marreta'], ['anda', 1110], ['ativa', 'fiapo'], ['anda', 1110], ['espera', 0.5],
+      ['ativa', 'marreta'], ['anda', 340], ['ativa', 'pudim'], ['barriga', 400, 900], ['ativa', 'marreta'], ['soca', 400, 900],
+      ['esperaChao', 'marreta', 3], ['anda', 1110], ['ativa', 'pudim'], ['anda', 1110], ['ativa', 'fiapo'], ['anda', 1110], ['espera', 0.5],
     ],
   },
   {
-    // bundada de cima: o Pudim sai do degrau e cai sentado no guarda lá embaixo
-    nome: 'bundada caindo de cima amassa o guarda', deve: [/PLAFT/],
+    // a bola não derruba mais ninguém (01/10, equilíbrio): no guarda desarmado, BUM e zonzo — ele continua lá
+    nome: 'bola no guarda de lápis quebrado: zonzo, não derruba', def: comInimigo('guarda', 620, -1, 60), perde: true,
+    deve: [/ponta do lápis quebrou/, /BUM/, /guarda zonzo/], nunca: [/guarda derrotado/, /pudim: -1/],
+    r: [['ativa', 'pudim'], ['barriga', 400, 900], ['rola', 1000], ['espera', 0.5]],
+  },
+  {
+    // de frente, a ponta fura a bola: rolando no guarda virado para ele, o Pudim se machuca (a estocada não quebra)
+    nome: 'bola de frente no guarda: o lápis fura', def: comInimigo('guarda', 620, -1, 0), perde: true,
+    deve: [/pudim: -1/], nunca: [/guarda derrotado/, /guarda zonzo/, /ponta do lápis quebrou/],
+    r: [['ativa', 'pudim'], ['rola', 1000], ['espera', 0.5]],
+  },
+  {
+    // pelas costas, a bola pega desarmado: BUM, zonzo (não derruba)
+    nome: 'bola pelas costas do guarda: zonzo', def: comInimigo('guarda', 620, 1, 400), perde: true, // (indo embora)
+    deve: [/BUM/, /guarda zonzo/], nunca: [/guarda derrotado/, /pudim: -1/],
+    r: [['ativa', 'pudim'], ['rola', 1000], ['espera', 0.5]],
+  },
+  {
+    // bundada de cima: o Pudim sai do degrau e cai sentado no guarda lá embaixo — PLAFT, zonzo; o Marreta derruba
+    nome: 'bundada caindo de cima deixa o guarda zonzo', deve: [/PLAFT/, /guarda zonzo/, /guarda derrotado/], nunca: [/: -1 /],
     def: { nome: 'teste: degrau', mapa: DEGRAU, inimigos: [{ especie: 'guarda', x: 430, y: 480, f: -1, alcance: 10 }] },
     r: [
-      ['ativa', 'pudim'], ['anda', 450], ['acao'], ['esperaChao', 'pudim', 3], ['espera', 0.3], // já saiu do degrau: no ar
-      ['anda', 1110], ['ativa', 'marreta'], ['anda', 1110], ['ativa', 'fiapo'], ['anda', 1110], ['espera', 0.5],
+      ['ativa', 'marreta'], ['anda', 340], // o Marreta espera na beira do degrau
+      ['ativa', 'pudim'], ['anda', 450], ['acao'], ['esperaChao', 'pudim', 3], ['anda', 560], // já saiu do degrau: no ar
+      ['ativa', 'marreta'], ['anda', 470], ['soca', 300, 900], // desce do degrau atrás dele ['esperaChao', 'marreta', 3],
+      ['anda', 1110], ['ativa', 'pudim'], ['anda', 1110], ['ativa', 'fiapo'], ['anda', 1110], ['espera', 0.5],
+    ],
+  },
+  {
+    // pisão (01/10): o Fiapo cai na cabeça do guarda, quica, o guarda fica zonzo e ele passa sem se machucar
+    nome: 'pisão do Fiapo: o guarda fica zonzo e ele passa', def: comInimigo('guarda', 620, -1, 60),
+    deve: [/guarda zonzo/], nunca: [/fiapo: -1/], // (o Fiapo não volta: chegou na saída pelo pisão)
+    r: [
+      ['ativa', 'fiapo'], ['pisa', 'guarda', 1110], ['ativa', 'marreta'], ['soca', 400, 900], ['esperaChao', 'marreta', 3],
+      ['anda', 1110], ['ativa', 'pudim'], ['anda', 1110], ['espera', 0.5],
     ],
   },
   {
@@ -641,13 +741,57 @@ const TESTES = [
     r: [['ativa', 'marreta'], ['anda', 470], ['espera', 2.5]],
   },
   {
-    // a tesoura quica na barriga (BOING): tonto; aí o Pudim rola em cima dele
-    nome: 'tesoura quica na barriga do Pudim', def: comInimigo('tesoureiro', 640, -1, 0),
-    deve: [/BOING/, /tesoureiro tonto/, /STRIKE/], nunca: [/pudim: -1/],
+    // a tesoura quica na barriga (BOING): tonto; o Marreta, esperando atrás do Pudim, vai e soca
+    nome: 'tesoura quica na barriga do Pudim; o Marreta derruba', def: comInimigo('tesoureiro', 640, -1, 0),
+    deve: [/BOING/, /tesoureiro tonto/, /tesoureiro derrotado/], nunca: [/: -1 /],
     r: [
-      ['ativa', 'pudim'], ['anda', 420], ['espera', 1.5], ['rolaEm', 0, 1280], ['esperaChao', 'pudim', 3],
-      ['anda', 1110], ['ativa', 'marreta'], ['anda', 1110], ['ativa', 'fiapo'], ['anda', 1110], ['espera', 0.5],
+      ['ativa', 'marreta'], ['anda', 300], ['ativa', 'pudim'], ['barriga', 0, 1280], ['ativa', 'marreta'], ['soca', 0, 1280],
+      ['esperaChao', 'marreta', 3], ['anda', 1110], ['ativa', 'pudim'], ['anda', 1110], ['ativa', 'fiapo'], ['anda', 1110], ['espera', 0.5],
     ],
+  },
+  {
+    // trena com o blindado (01/10): o Pudim sobe a escada, rola pelo duto (só a bola cabe), cai do outro lado, bundada
+    // no botão — a fita recolhe e o blindado cai nos lápis —, outra bundada estica; aí todos passam
+    nome: 'blindado na trena: o Pudim vai pelo duto, recolhe a fita e estica de novo', def: TRENA_BLINDADO(),
+    deve: [/trena recolhe/, /blindado derrotado/, /trena estica/], nunca: [/: -1 /],
+    r: [
+      ['ativa', 'pudim'], ['anda', 920], ['sobe'], ['rola', 120], ['bundadaEm', 350, 380], ['esperaChao', 'pudim', 3],
+      ['espera', 1.2], ['bundadaEm', 380, 380], ['esperaChao', 'pudim', 3], ['espera', 0.5], ['anda', 100],
+      ['ativa', 'marreta'], ['anda', 100], ['ativa', 'fiapo'], ['anda', 100], ['espera', 0.5],
+    ],
+  },
+  {
+    // nem o Fiapo pula por cima do blindado: o duto corta o pulo (senão a trena ficava sem razão)
+    nome: 'blindado: o Fiapo não pula por cima dele', def: TRENA_BLINDADO(), perde: true,
+    confere: (m) => m.herois.find((h) => h.id === 'fiapo').x > 400,
+    r: [['ativa', 'fiapo'], ['anda', 740], ['espreita', 'blindado', 600, 1], ['pula'], ['segura', 'esq', 1.4], ['espera', 1]],
+  },
+  {
+    // o blindado não cai de golpe nenhum: o soco e a bola do Pudim só fazem CLANG (ninguém passa)
+    nome: 'blindado: soco e bola fazem CLANG, não derrubam', def: TRENA_BLINDADO(), perde: true,
+    deve: [/CLANG/], nunca: [/blindado derrotado/, /trena recolhe/],
+    r: [
+      ['ativa', 'marreta'], ['anda', 760], ['olha', -1], ['acao'], ['espera', 0.6], ['acao'], ['espera', 0.6], ['gancho'], ['espera', 0.8],
+      ['ativa', 'pudim'], ['rola', 300], ['espera', 1.5],
+    ],
+  },
+  {
+    // estojo de zíper (01/10): o Marreta empurra; a estocada bate no estojo (TOC); o estojo leva o guarda para o fosso e
+    // cai nele, fechando o buraco: todos passam por cima
+    nome: 'Marreta empurra o estojo: o guarda cai no fosso e o estojo vira chão', def: ESTOJO_FOSSO(true),
+    // (e fica rente: o topo dele na linha do chão — 01/10, usuário: "tem que ficar totalmente rente ao chão")
+    confere: (m) => Math.abs(m.nivel.estojos[0].topo() - 480) < 0.5,
+    deve: [/estojo empurra guarda/, /lápis bateu no estojo/, /guarda derrotado/, /estojo caiu/], nunca: [/: -1 /],
+    r: [
+      ['ativa', 'marreta'], ['empurra', 500], ['esperaChao', 'marreta', 3], ['espera', 0.5], ['anda', 100],
+      ['ativa', 'fiapo'], ['anda', 100], ['ativa', 'pudim'], ['anda', 100], ['espera', 0.5],
+    ],
+  },
+  {
+    // só o Marreta empurra: o Fiapo para nele (o estojo não sai do lugar) e o fosso continua aberto
+    nome: 'Fiapo e Pudim não empurram o estojo', def: ESTOJO_FOSSO(false), perde: true, nunca: [/estojo caiu/],
+    confere: (m) => Math.abs(m.nivel.estojos[0].x - 900) < 1,
+    r: [['ativa', 'fiapo'], ['anda', 600], ['ativa', 'pudim'], ['anda', 600], ['espera', 0.5]],
   },
   {
     // correndo na cola ele gruda: preso, o Marreta soca de frente
@@ -772,7 +916,73 @@ const FASES_PROIBIDAS = {
       r: [['ativa', 'fiapo'], ['salta', px + dx, px - dx], ['segura', 'cima', 1.5], ['espera', 1]],
     }))),
   ],
+  // Mesa nova, etapa 1 (30/09, usuário: "eu simplesmente estou pulando com o Fiapo em cima do Pudim e subo lá em cima"):
+  // a estante tem 400 px — só a gangorra leva o Fiapo lá; quicar na barriga (o Pudim encostado nela ou na ponta da régua)
+  // e o gancho do Marreta não chegam
+  // (01/10: a fase do usuário cresceu 11 blocos para a esquerda: tudo 440 px para a direita)
+  mesa3: [
+    ...[1200, 1242].flatMap((px) => [1060, 1120].map((x0) => ({
+      nome: `Fiapo quicando no Pudim (x ${px}, pulo ${x0}) não sobe na estante sem a gangorra`, id: 'fiapo', ymax: 1521,
+      prepara: (m) => { const [f, p] = [m.herois[1], m.herois[2]]; p.x = px; p.y = 1920; f.x = x0 - 80; f.y = 1920; },
+      r: [['ativa', 'fiapo'], ['salta', x0, 1400], ['espera', 2]],
+    }))),
+    {
+      nome: 'o gancho do Marreta não joga o Fiapo no alto da estante', id: 'fiapo', ymax: 1521,
+      prepara: (m) => { const [ma, f] = m.herois; f.x = 1240; f.y = 1920; ma.x = 1196; ma.y = 1920; ma.f = 1; },
+      r: [['ativa', 'marreta'], ['gancho'], ['espera', 2]],
+    },
+    // Trena (etapa 7, 01/10): o lado de lá do vão (a caixa e o chão até a escada) só se alcança pelo duto, em bola. Nem o
+    // Fiapo correndo (do alto do piso do estojo ou do pé da escada), nem o Marreta arremessando o Fiapo ou dando o gancho
+    // no Pudim: o chão do duto, 160 px acima da fita, corta todos os arcos (e o blindado está na fita)
+    {
+      nome: 'trena: o Fiapo correndo do alto do estojo (já no fosso) não pula o vão', id: 'fiapo', onde: TRENA_LA,
+      prepara: (m) => {
+        const f = m.herois[1], e = m.nivel.estojos[0];
+        e.x = 2420; e.y = 1360; m.inimigos = m.inimigos.filter((o) => !(o.especie === 'guarda' && o.y === 1280));
+        f.x = 2640; f.y = 1280;
+      },
+      r: [['ativa', 'fiapo'], ['segura', 'esq', 0.05], ['espera', 0.05], ['salta', 2285, 1500], ['espera', 2]],
+    },
+    {
+      nome: 'trena: o Fiapo do pé da escada não pula o vão', id: 'fiapo', onde: TRENA_LA,
+      prepara: (m) => { const f = m.herois[1]; f.x = 2236; f.y = 1360; },
+      r: [['ativa', 'fiapo'], ['salta', 2236, 1500], ['espera', 2]],
+    },
+    {
+      nome: 'trena: do alto da escada do duto, o Fiapo não pula para o lado de lá', id: 'fiapo', onde: TRENA_LA,
+      prepara: (m) => { const f = m.herois[1]; f.x = 2200; f.y = 1360; },
+      r: [['ativa', 'fiapo'], ['sobe', 3], ['salta', 2200, 1500], ['espera', 2]],
+    },
+    {
+      nome: 'trena: o Marreta não arremessa o Fiapo por cima do vão', id: 'fiapo', onde: TRENA_LA,
+      prepara: (m) => { const [ma, f] = m.herois; f.x = 2190; f.y = 1360; ma.x = 2228; ma.y = 1360; ma.f = -1; },
+      r: [['ativa', 'marreta'], ['acao'], ['espera', 2.5]],
+    },
+    {
+      nome: 'trena: o gancho do Marreta não joga o Pudim por cima do vão', id: 'pudim', onde: TRENA_LA,
+      prepara: (m) => { const [ma, , p] = m.herois; p.x = 2180; p.y = 1360; ma.x = 2236; ma.y = 1360; ma.f = -1; },
+      r: [['ativa', 'marreta'], ['gancho'], ['espera', 2.5]],
+    },
+  ],
 };
+// o lado de lá do vão da trena na Mesa nova: o chão entre a escada e a caixa (x < 1880, y 1360) ou em cima da caixa
+function TRENA_LA(h) { return h.noChao && h.x < 1925 && h.x > 1600 && h.y > 1300 && h.y < 1365; }
+// Erros que o jogador comete e de que tem que dar para se recuperar (30/09, usuário: "não só assim, o jogador fez tudo
+// certo e conseguiu passar; e se der algo errado?"): o robô erra de propósito, conserta e o teste confere que chegou
+// (ok) sem perder coração. Com as coisas que mexem com o tempo (a gangorra); o resto, o confereVolta.
+const FASES_ERROS = {
+  mesa3: [
+    { nome: 'o Pudim pula na régua sem a bundada (o Fiapo voa baixo e cai), volta pela escada e acerta',
+      r: [['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28], ['ativa', 'pudim'], ['vai', 780], ['anda', 782], ['salta', 796, 862.72],
+        ['esperaChao', 'fiapo'], ['anda', 760], ['sobe'], ['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28],
+        ['ativa', 'pudim'], ['anda', 782], ['espera', 1.5], ['bundadaEm', 796, 862.72], ['esperaChao', 'fiapo'], ['espera', 0.5]] },
+    { nome: 'o Fiapo no meio da régua voa baixo; volta para a ponta e o Pudim, pela escada, lança de novo',
+      r: [['ativa', 'fiapo'], ['vai', 1100], ['anda', 1100], ['ativa', 'pudim'], ['vai', 780], ['anda', 782], ['bundadaEm', 796, 862.72],
+        ['esperaChao', 'fiapo'], ['anda', 760], ['sobe'], ['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28],
+        ['ativa', 'pudim'], ['anda', 782], ['espera', 1.5], ['bundadaEm', 796, 862.72], ['esperaChao', 'fiapo'], ['espera', 0.5]] },
+  ].map((e) => Object.assign(e, { ok: (m) => { const f = m.herois[1]; return f.noChao && Math.abs(f.y - 1520) < 1 && f.x > 1280 && f.x < 1440; } })),
+};
+
 // Decoração no plano de trás (def.decoracao, camada 'fundo'; Nivel._decoracao): a parte de baixo da peça fica escondida
 // atrás do tampo e da laje, então embaixo da peça inteira tem que haver chão — contando o que a paralaxe desloca
 // (DECO.deriva) —, senão o pé aparece pendurado num vão. (29/09, usuário: "você tem que olhar como é que ficou" — a
@@ -789,6 +999,72 @@ function confereDecoracao(def) {
     }
   }
   return erros;
+}
+
+// Colado na parede (30/09, usuário: "o Pudim às vezes entra debaixo do piso e fica travado no início da fase"): ele tem
+// 72 px e nascia no bloco colado na borda, 16 px dentro dela; pulando ali, o bloco da parede virava teto e jogava ele
+// para baixo do chão. Agora nasce encostado (Heroi.encaixa) e, mesmo enfiado de lado na parede, o pulo não afunda.
+function confereParede() {
+  const L = [];
+  for (let l = 0; l < 15; l++) L.push('.'.repeat(32).split(''));
+  for (let c = 0; c < 32; c++) for (let l = 12; l < 15; l++) L[l][c] = '#';
+  for (let l = 0; l < 12; l++) L[l][0] = '#';
+  L[11][1] = '3'; L[11][3] = '1'; L[11][5] = '2'; L[2][30] = 'S';
+  const def = { nome: 'parede', mapa: L.map((x) => x.join('')) }, r = [];
+  let m = new Mundo(def, { rapido: true }), p = m.herois[2];
+  r.push({ sala: 'parede', nome: 'colado na parede: o Pudim nasce encostado, fora dela', venceu: Math.abs(p.x - (TILE + p.cfg.w / 2)) < 1, log: [`x=${p.x.toFixed(1)}`] });
+  m = new Mundo(def, { rapido: true }); p = m.herois[2]; m.seleciona(2);
+  p.x = TILE + 20; // (enfiado 16 px na parede, como nascia antes)
+  let fundo = 0;
+  for (let t = 0; t < 1.5; t += Jogo.PASSO) { m.passo(Jogo.PASSO, t < 0.05 ? { pulo: true } : {}); fundo = Math.max(fundo, p.y); }
+  r.push({ sala: 'parede', nome: 'colado na parede: pulando, o Pudim não afunda no chão', venceu: fundo <= 12 * TILE + 0.5 && p.noChao, log: [`y máx=${fundo.toFixed(1)} (chão 480)`] });
+  return r;
+}
+
+// Ponto de controle (30/09, usuário: "tem que salvar o status de quando passou no checkpoint: alavancas, itens"): o robô
+// joga a fase; no primeiro ponto pego, guarda a cópia (Jogo.clona) e segue até o fim; depois volta para a cópia e joga
+// de novo até o fim: tem que vencer do mesmo jeito (no mesmo tempo, os três no mesmo lugar) — a cópia leva tudo.
+function conferePonto(def) {
+  const m = new Mundo(def, { bot: new Bot(def.roteiro), rapido: true });
+  let copia = null;
+  const ate = (w) => { for (let t = 0; t < (def.tmax || 300) && w.estado === 'jogando'; t += Jogo.PASSO) { w.passo(Jogo.PASSO, {}); if (w.pontoNovo && !copia) { w.pontoNovo = null; copia = Jogo.clona(w); } } return w; };
+  const fim = (w) => `${w.estado} t=${w.t.toFixed(2)} ${w.herois.map((h) => `${h.id} ${Math.round(h.x)},${Math.round(h.y)}`).join(' ')}`;
+  const a = fim(ate(m));
+  if (!copia) return { sala: def.nome, nome: 'ponto de controle: o robô não pegou nenhum', venceu: false, log: [a] };
+  const b = fim(ate(Jogo.clona(copia)));
+  return { sala: def.nome, nome: 'ponto de controle: voltando para ele, o robô termina igual', venceu: a === b && /^venceu/.test(a), log: [a, b] };
+}
+
+// Lixeira (30/09, usuário: "visibilidade"; o alvo): só mira em quem a bolinha alcança (embaixo de laje, a salvo) e
+// fica no mesmo alvo enquanto ele estiver ao alcance. Lixeira numa prateleira alta (linha 7, colunas 20-21).
+function confereLixeira() {
+  const mapa = (extra) => {
+    const L = [];
+    for (let l = 0; l < 15; l++) L.push('.'.repeat(32).split(''));
+    for (let c = 0; c < 32; c++) for (let l = 12; l < 15; l++) L[l][c] = '#';
+    L[7][20] = L[7][21] = '#'; L[2][30] = 'S';
+    extra(L);
+    return { nome: 'lixeira', mapa: L.map((x) => x.join('')), inimigos: [{ especie: 'lixeira', x: 840, y: 280, f: -1, alcance: 0 }] };
+  };
+  const joga = (def, prepara, t = 6) => {
+    const m = new Mundo(def, { rapido: true });
+    if (prepara) prepara(m);
+    for (let s = 0; s < t; s += Jogo.PASSO) m.passo(Jogo.PASSO, {});
+    return m.log.filter((l) => /lixeira joga em/.test(l)).map((l) => l.split('joga em ')[1]);
+  };
+  const r = [];
+  // o Pudim parado embaixo de uma laje ao alcance dela; os outros longe
+  const laje = (com) => mapa((L) => { if (com) for (let c = 12; c < 19; c++) L[8][c] = '#'; L[11][15] = '3'; L[11][1] = '1'; L[11][2] = '2'; });
+  let x = joga(laje(true));
+  r.push({ sala: 'lixeira', nome: 'lixeira: embaixo da laje, o Pudim está a salvo (ela não joga)', venceu: !x.length, log: [`jogou em: ${x.join(', ') || 'ninguém'}`] });
+  x = joga(laje(false));
+  r.push({ sala: 'lixeira', nome: 'lixeira: sem a laje, ela joga no Pudim', venceu: x.length > 0 && x.every((q) => q === 'pudim'), log: [`jogou em: ${x.join(', ')}`] });
+  // o Pudim ao alcance primeiro (a bolinha quica na barriga: não machuca); o Marreta chega mais perto dela depois: ela
+  // continua no Pudim
+  const dois = mapa((L) => { L[11][16] = '3'; L[11][1] = '1'; L[11][2] = '2'; });
+  x = joga(dois, (m) => { m.bot = new Bot([['ativa', 'marreta'], ['espera', 1], ['anda', 700], ['espera', 4]]); }, 9);
+  r.push({ sala: 'lixeira', nome: 'lixeira: fica no mesmo alvo (o Pudim), mesmo com o Marreta chegando mais perto', venceu: x.length >= 3 && x.every((q) => q === 'pudim'), log: [`jogou em: ${x.join(', ')}`] });
+  return r;
 }
 
 // Pose de empurrar (heroi.js, travaAlto): o Marreta anda para a direita contra cada obstáculo e tem que empurrar só
@@ -811,53 +1087,88 @@ function confereEmpurra() {
 
 // O desenho não entra no sólido (30/09): cada herói anda até uma parede (dos dois lados), segura para ela e depois
 // solta; o quadro que o jogo desenha (com o recuo do Sprites.escolhe) não pode ter pixel dentro da parede
-// Régua-gangorra (30/09): escadinha de 4 livros (o Pudim sobe pulando), a gangorra com a ponta direita embaixo e a
-// estante de 280 px. Só a bundada do Pudim, caindo do alto da escadinha na ponta de cima, lança o Fiapo lá em cima; o
-// Pudim só pulando e o Marreta lançam baixo. Andando para o lado de cima ela vira devagar e ninguém voa.
+// Régua-gangorra (30/09; refeita no mesmo dia, depois do teste do usuário): escadinha de 4 livros (o Pudim sobe
+// pulando), a gangorra com a ponta direita embaixo e uma estante de 400 px logo depois da ponta. Só a bundada do Pudim,
+// caindo do alto da escadinha na ponta de cima, lança o Fiapo — em ARCO, sem ninguém controlar — até o alto da estante;
+// o Pudim só pulando e o Marreta lançam baixo; quicar na barriga do Pudim e o gancho do Marreta não chegam lá
+// (proibidos: era o atalho que o usuário achou). Andando para o lado de cima ela vira devagar e ninguém voa; sem ninguém
+// em cima, volta sozinha para a posição do mapa (dá para lançar de novo).
 function confereGangorra() {
-  const mapa = () => {
+  const TOPO = 80; // o alto da estante: 400 px acima do chão (y = 480)
+  const mapa = (extra) => {
     const L = [];
     for (let l = 0; l < 15; l++) L.push('.'.repeat(32).split(''));
     for (let c = 0; c < 32; c++) for (let l = 12; l < 15; l++) L[l][c] = '#';
     for (let k = 1; k <= 4; k++) for (let l = 12 - k; l < 12; l++) L[l][1 + k] = '#'; // escadinha
-    for (let l = 5; l < 12; l++) for (let c = 18; c < 22; c++) L[l][c] = '#';        // estante (topo em y = 200)
-    L[11][11] = 'V'; L[11][0] = '3'; L[11][1] = '1'; L[11][16] = '2'; L[4][19] = 'S';
+    for (let l = 2; l < 12; l++) for (let c = 18; c < 22; c++) L[l][c] = '#';        // estante (topo em y = 80)
+    L[11][11] = 'V'; L[11][0] = '3'; L[11][1] = '1'; L[11][16] = '2'; L[1][19] = 'S';
+    if (extra) extra(L);
     return { nome: 'gangorra', mapa: L.map((x) => x.join('')) };
   };
   const def = mapa(), g = new Nivel(def).gangorras[0], xa = g.ponta(1), xb = g.ponta(-1);
+  const noAlto = (h) => h.noChao && Math.abs(h.y - TOPO) < 1 && h.x > 720 && h.x < 880;
   const casos = [
-    ['a bundada do Pudim lança o Fiapo no alto da estante', 'pudim', true, true],
+    ['a bundada do Pudim lança o Fiapo em arco até o alto da estante, sem ninguém controlar', 'pudim', true, true],
     ['o Pudim só pulando não lança o Fiapo lá (proibido)', 'pudim', false, false],
     ['o Marreta pulando não lança o Fiapo lá (proibido)', 'marreta', false, false],
   ];
   const r = casos.map(([nome, quem, bundada, deve]) => {
     const rot = [['ativa', 'fiapo'], ['anda', xa], ['ativa', quem], ['vai', 220], ['anda', 222],
-      bundada ? ['bundadaEm', 236, xb] : ['salta', 236, xb], ['esperaChao', quem], ['ativa', 'fiapo'], ['anda', 790], ['espera', 0.5]];
+      bundada ? ['bundadaEm', 236, xb] : ['salta', 236, xb], ['esperaChao', 'fiapo'], ['espera', 0.5]];
     const x = simula(def, rot, 30), fi = x.m.herois.find((h) => h.id === 'fiapo');
-    const chegou = Math.abs(fi.y - 200) < 1 && fi.x > 720, lancou = x.logTodo.some((l) => /gangorra lança fiapo/.test(l));
+    const chegou = noAlto(fi), lancou = x.logTodo.some((l) => /gangorra lança fiapo/.test(l));
     return { sala: 'gangorra', nome: `gangorra: ${nome}`, venceu: lancou && chegou === deve, log: [x.logTodo.filter((l) => /gangorra/.test(l)).join(' ; '), `fiapo x=${fi.x.toFixed(0)} y=${fi.y.toFixed(0)}`] };
   });
+  // o Fiapo cai na ponta de cima (vira a régua) e sai dela: vazia, ela volta sozinha para a posição do mapa (a ponta
+  // direita embaixo) e dá para lançar de novo
+  {
+    const vazio = mapa((L) => { for (let c = 2; c <= 5; c++) for (let l = 8; l < 12; l++) L[l][c] = '.'; L[11][16] = '.'; L[11][3] = '2'; });
+    const rot = [['ativa', 'fiapo'], ['salta', 250, 330], ['esperaChao', 'fiapo'], ['anda', 110], ['espera', 2]];
+    const m = new Mundo(vazio, { bot: new Bot(rot), rapido: true }), gg = m.nivel.gangorras[0];
+    let virou = false;
+    for (let t = 0; t < 20 && m.bot.i < rot.length; t += Jogo.PASSO) { m.passo(Jogo.PASSO, {}); if (gg.lado === -1) virou = true; }
+    r.push({ sala: 'gangorra', nome: 'gangorra: vazia, volta sozinha para a posição do mapa (dá para lançar de novo)', venceu: virou && gg.lado === 1 && gg.ang === GANGORRA.ang,
+      log: [`virou=${virou} lado=${gg.lado} ang=${gg.ang.toFixed(3)} fiapo x=${m.herois[1].x.toFixed(0)}`] });
+  }
+  // atalhos (sem a gangorra): o Fiapo quicando na barriga do Pudim encostado na estante, e o gancho do Marreta
+  const sem = mapa((L) => { L[11][11] = '.'; });
+  const tenta = (prepara, rot) => {
+    const m = new Mundo(sem, { bot: new Bot(rot), rapido: true }), fi = m.herois.find((h) => h.id === 'fiapo');
+    prepara(m.herois);
+    let subiu = false;
+    for (let t = 0; t < 10 && m.bot.i < rot.length; t += Jogo.PASSO) { m.passo(Jogo.PASSO, {}); if (noAlto(fi)) subiu = true; }
+    return subiu;
+  };
+  const poe = (h, x) => { h.x = x; h.y = 480; };
+  for (const x0 of [520, 580, 620]) {
+    const subiu = tenta(([ma, fi, pu]) => { poe(pu, 682); poe(fi, 440); poe(ma, 300); }, [['ativa', 'fiapo'], ['salta', x0, 820], ['espera', 2]]);
+    r.push({ sala: 'gangorra', nome: `gangorra: o Fiapo quicando no Pudim encostado na estante (pulo em ${x0}) não sobe nela (proibido)`, venceu: !subiu, log: [subiu ? 'subiu' : 'não subiu'] });
+  }
+  const subiu = tenta(([ma, fi, pu]) => { poe(fi, 690); poe(ma, 646); ma.f = 1; poe(pu, 300); }, [['ativa', 'marreta'], ['gancho'], ['espera', 2]]);
+  r.push({ sala: 'gangorra', nome: 'gangorra: o gancho do Marreta não joga o Fiapo no alto da estante (proibido)', venceu: !subiu, log: [subiu ? 'subiu' : 'não subiu'] });
   // os dois na ponta de baixo; o Pudim anda para a de cima: vira devagar e o Fiapo sobe junto, sem voar
   const rot = [['ativa', 'fiapo'], ['anda', xa], ['ativa', 'pudim'], ['vai', 300], ['espera', 1]];
   const L = def.mapa.map((q) => q.split('')); L[11][0] = '.'; L[11][17] = '3'; // (fora da régua: embaixo dela passa por baixo)
   const x = simula({ nome: 'gangorra', mapa: L.map((q) => q.join('')) }, rot, 20), fi = x.m.herois.find((h) => h.id === 'fiapo');
-  const gg = x.m.nivel.gangorras[0], subiu = fi.plat === gg && fi.y < 480 - 100;
+  const gg = x.m.nivel.gangorras[0], subiuJunto = fi.plat === gg && fi.y < 480 - 100;
   r.push({ sala: 'gangorra', nome: 'gangorra: andando para o lado de cima, vira devagar e o Fiapo sobe junto, sem voar',
-    venceu: gg.lado === -1 && subiu && !x.logTodo.some((l) => /gangorra lança/.test(l)), log: [`lado=${gg.lado} fiapo y=${fi.y.toFixed(0)}`] });
+    venceu: gg.lado === -1 && subiuJunto && !x.logTodo.some((l) => /gangorra lança/.test(l)), log: [`lado=${gg.lado} fiapo y=${fi.y.toFixed(0)}`] });
   return r;
 }
 
 // Carimbo (30/09): teto com 6 blocos de vão e um carimbo no meio do corredor. Os três passam no tempo certo (comando
 // 'carimbo') sem perder coração; andando direto, o Marreta leva a carimbada; uma borracha embaixo é achatada.
+// Ajuste do usuário (30/09): o corpo é sólido e só machuca ESPREMIDO — encostar do lado é parede (sem dano); com ele
+// embaixo, o Fiapo passa por cima; parado em cima quando ele sobe, é espremido no teto (proibido).
 function confereCarimbo() {
-  const mapa = (extra) => {
+  const mapa = (extra, carimbos) => {
     const L = [];
     for (let l = 0; l < 15; l++) L.push('.'.repeat(32).split(''));
     for (let c = 0; c < 32; c++) for (let l = 12; l < 15; l++) L[l][c] = '#';
     for (let c = 10; c < 23; c++) for (let l = 4; l < 6; l++) L[l][c] = '#'; // teto (vão de 6 blocos até o chão)
     L[6][16] = 'c'; L[11][2] = '1'; L[11][4] = '2'; L[11][6] = '3'; L[9][29] = 'S';
     if (extra) extra(L);
-    return { nome: 'carimbo', mapa: L.map((x) => x.join('')) };
+    return { nome: 'carimbo', mapa: L.map((x) => x.join('')), carimbos };
   };
   const dano = (x) => x.logTodo.filter((l) => /-1 cora/.test(l));
   const r = [];
@@ -865,11 +1176,39 @@ function confereCarimbo() {
   const passaram = x.m.herois.every((h) => h.x > 880);
   r.push({ sala: 'carimbo', nome: 'carimbo: os três passam por baixo no tempo certo, sem perder coração', venceu: passaram && !dano(x).length,
     log: [x.m.herois.map((h) => `${h.id} x=${h.x.toFixed(0)}`).join(' '), dano(x).join(' ; ')] });
-  x = simula(mapa(), [['ativa', 'marreta'], ['espera', 1.5], ['anda', 900]], 20); // (chega embaixo na descida)
-  r.push({ sala: 'carimbo', nome: 'carimbo: andando direto, sem esperar, o Marreta leva a carimbada (proibido)', venceu: dano(x).length > 0, log: [dano(x).join(' ; ') || 'sem dano'] });
   x = simula(mapa((L) => { L[11][16] = 'o'; }), [['espera', 4]], 6);
   const plaft = x.logTodo.some((l) => /PLAFT/.test(l));
   r.push({ sala: 'carimbo', nome: 'carimbo: a borracha embaixo dele é achatada', venceu: plaft, log: [plaft ? 'PLAFT!' : 'escapou'] });
+  // à mão (teclas por quadro): ritmo de 4 s — embaixo de 2,08 s a 2,76 s, depois sobe
+  const RITMO = 4, embaixo = RITMO * 0.52, borda = 16 * TILE + 20 - CARIMBO.w / 2;
+  const joga = (id, x0, teclas, ate) => {
+    const m = new Mundo(mapa(null, [{ c: 16, l: 6, ritmo: RITMO }]), { rapido: true }), h = m.herois.find((q) => q.id === id), k = m.nivel.carimbos[0];
+    m.ativo = m.herois.indexOf(h); h.x = x0;
+    let emCima = false, xMax = -1e9;
+    for (let t = 0; t < ate; t += Jogo.PASSO) {
+      m.passo(Jogo.PASSO, teclas(t));
+      if (h.plat === k) emCima = true;
+      if (t > embaixo) xMax = Math.max(xMax, h.x);
+    }
+    return { h, emCima, xMax, dano: VIDAS - h.vidas };
+  };
+  // parado embaixo dele (lá em cima, sem encostar), espera: ele desce em cima
+  let j = joga('marreta', 16 * TILE + 20, () => ({}), embaixo + 0.5);
+  r.push({ sala: 'carimbo', nome: 'carimbo: parado embaixo dele, o Marreta leva a carimbada (proibido)', venceu: j.dano > 0, log: [`dano=${j.dano}`] });
+  // encosta do lado com ele embaixo (segura para a direita 0,3 s) e sai antes de ele subir
+  j = joga('marreta', borda - 60, (t) => (t > embaixo && t < embaixo + 0.3 ? { dir: true } : t >= embaixo + 0.3 && t < embaixo + 0.9 ? { esq: true } : {}), embaixo + 1);
+  r.push({ sala: 'carimbo', nome: 'carimbo: encostar do lado não machuca (é parede)', venceu: !j.dano && j.xMax <= borda - 23 + 1,
+    log: [`dano=${j.dano} x máx=${j.xMax.toFixed(0)} (parede em ${borda - 23})`] });
+  // com ele embaixo, o Fiapo pula, atravessa por cima e desce do outro lado
+  let pulou = false;
+  j = joga('fiapo', borda - 24, (t) => { if (t <= embaixo) return {}; const e = { dir: true, pulo: !pulou }; pulou = true; return e; }, embaixo + 1.2);
+  r.push({ sala: 'carimbo', nome: 'carimbo: com ele embaixo, o Fiapo passa por cima (é plataforma)', venceu: j.emCima && !j.dano && j.h.x > borda + CARIMBO.w + 16,
+    log: [`em cima=${j.emCima} dano=${j.dano} x=${j.h.x.toFixed(0)}`] });
+  // pula em cima e fica: quando ele sobe, a cabeça bate no teto
+  pulou = false;
+  j = joga('fiapo', borda - 24, (t) => { if (t <= embaixo) return {}; const e = { dir: t < embaixo + 0.25, pulo: !pulou }; pulou = true; return e; }, embaixo + 2);
+  r.push({ sala: 'carimbo', nome: 'carimbo: parado em cima quando ele sobe, é espremido no teto (proibido)', venceu: j.emCima && j.dano > 0,
+    log: [`em cima=${j.emCima} dano=${j.dano}`] });
   return r;
 }
 
@@ -971,11 +1310,192 @@ function confereEncosta(semRecuo) {
   return r;
 }
 
+// Ida sem volta (30/09, usuário: "e se der algo errado? E se o personagem cair num lugar e não consegue voltar? Tem que
+// ter a oportunidade de se recuperar de um erro"). Cada herói SOZINHO, no motor de verdade: de cada lugar em que ele
+// fica em pé, tenta os movimentos dele (anda um pouco, pula parado, para cada lado, pulinho, sobe e desce escada; o
+// Pudim também vira bola) e anota onde parou. Começa dos lugares por onde o robô passa na solução e segue tudo o que dá
+// para alcançar dali — os erros também. Lugares que se alcançam um ao outro são uma ILHA; o movimento que leva a outra
+// ilha sem caminho de volta é uma IDA SEM VOLTA: feito por engano, aquele herói não volta sozinho. Cada uma se conserta
+// na fase ou fica declarada nela, com o motivo (def.semVolta: [{ quem: id | [ids] | 'todos', para: [c, l], situacao?,
+// motivo }]: a ilha de chegada que tem o bloco c, l). Duas situações: 'inicio' (a fase como abre: nada resolvido) e
+// 'fim' (o mundo do robô no fim da solução: portões abertos, papel rasgado, as cordas que ficaram — e elas valem de
+// caminho: ponte, escalar). Sem inimigos, carimbos e gangorra (mexem com o tempo); quem cai no lápis se machuca e volta
+// ao ponto seguro (não conta).
+const VOLTA = { q: 8, max: 6000 };
+function mundoSozinho(m) {
+  const n = m.nivel;
+  m.bot = null; m.inimigos = []; n.carimbos = []; n.gangorras = []; n._plats = null;
+  n.atualizaCanais = () => {}; m._chaves = () => {}; m._rolos = () => {}; m._saida = () => {};
+  n.versao++;
+  m.durex0 = n.durex.map((r) => [r.x, r.y]);
+  m.estojos0 = n.estojos.map((r) => [r.x, r.y]);
+  return m;
+}
+function movimentosVolta(id, bola) {
+  const lado = (s) => (s > 0 ? { dir: true } : { esq: true }), M = [];
+  for (const s of [-1, 1]) {
+    // (segurando, a bola sobe a rampa; E no meio dela levanta — no pé, encostada, não cabe em pé)
+    if (bola) { M.push({ n: `rola ${s}`, T: 0.4, E: () => lado(s) }, { n: `rola e levanta ${s}`, T: 0.9, E: (t, k) => Object.assign(lado(s), { acao: k === 60 }) }); continue; }
+    M.push({ n: `anda ${s}`, T: 0.12, E: () => lado(s) });
+    M.push({ n: `pula ${s}`, T: 1.6, pulo: true, E: () => lado(s) });
+    M.push({ n: `pulinho ${s}`, T: 1.6, pulo: true, E: (t) => (t < 0.15 ? lado(s) : {}) });
+    if (id === 'pudim') M.push({ n: `bola ${s}`, T: 0.6, E: (t, k) => Object.assign(lado(s), { acao: k === 10 }) });
+  }
+  M.push({ n: 'pula', T: 1.6, pulo: true, E: () => ({}) }, { n: 'espera', T: 3, E: () => ({}) }); // (em cima do post-it: cai com ele)
+  // escada ou corda: ↑ / ↓ até sair dela (se em 0,8 s não pegou nada, não vale)
+  if (!bola) M.push({ n: 'sobe', T: 8, sobe: true, E: () => ({ cima: true }) }, { n: 'desce', T: 8, sobe: true, E: () => ({ baixo: true }) });
+  return M;
+}
+const PARADO_VOLTA = { n: 'parado', T: 0, E: () => ({}) };
+// um movimento a partir de s (o herói novo, sozinho): onde ele para em pé (ou a bola do Pudim parada), ou null
+function rodaVolta(m, id, s, mov) {
+  const n = m.nivel, h = new Heroi(id, s.x, s.y).encaixa(n);
+  if (s.bola) { h.cfg = BOLA; h.muda('rolando'); }
+  // (semente com o meio do corpo dentro de um sólido — o portão fechado por onde o robô passou aberto — não vale; na
+  // rampa os pés entram no bloco cheio embaixo dela: a conta para 20 px acima do pé)
+  if (bloqueado(n, Math.floor(h.x / TILE), h.y - h.cfg.h + 4, h.y - 20)) return null;
+  if (mov.n === 'espera' && !s.plat) return null;
+  if (mov.sobe && !(mov.n === 'sobe' ? n.escadaEm(h) || h._linhaPerto(m) || h._linhaAlcance(m)
+    : n.topoEscada(h) || m.cordas.linhas().some((q) => h.podeDescer(q)))) return null;
+  m.herois = [h]; m.cordas.herois = m.herois; m.ativo = 0; m.estado = 'jogando'; m.parada = 0;
+  for (const p of n.postits) { p.estado = 'colado'; p.t = 0; }
+  n.durex.forEach((r, i) => { [r.x, r.y] = m.durex0[i]; r.vx = r.vy = 0; r.noChao = true; });
+  n.estojos.forEach((r, i) => { [r.x, r.y] = m.estojos0[i]; r.vx = r.vy = 0; r.noChao = true; });
+  let firme = 0, solta = false, subiu = false;
+  for (let k = 0, t = 0; t < mov.T + 3; k++, t += Jogo.PASSO) {
+    if (t >= mov.T || (mov.pulo && k > 2 && h.noChao) || (mov.sobe && subiu && h.estado === 'chao')) solta = true;
+    m.passo(Jogo.PASSO, solta ? {} : Object.assign({ pulo: !!mov.pulo && k === 0 }, mov.E(t, k)));
+    if (h.vidas < VIDAS || h.estado === 'machucado') return null;
+    if (h.estado === 'escada' || h.estado === 'escalando') subiu = true;
+    if (mov.sobe && !subiu && t > 0.8) return null;
+    const parado = solta && h.noChao && Math.abs(h.vx) < 20 && (h.estado === 'chao' || h.estado === 'rolando');
+    firme = parado ? firme + Jogo.PASSO : 0;
+    // (a bola parada levanta sozinha em 0,2 s onde cabe em pé: espera; bola que fica bola é a do duto)
+    if (firme >= 0.35) return { x: h.x, y: Math.round(h.y), bola: h.estado === 'rolando', plat: !!h.plat };
+  }
+  return null;
+}
+// As ilhas de um herói numa situação: { nos, ilha (chave -> nº), idas: [{ para, de, movs, pontos }] }
+function mapaVolta(m, id, sementes) {
+  const Q = VOLTA.q;
+  const chave = (s) => `${s.bola ? 1 : 0}|${Math.round(s.x / Q)}|${s.y}`;
+  const nos = new Map(), sai = new Map(), fila = [];
+  const poe = (s) => { const k = chave(s); if (!nos.has(k) && nos.size < VOLTA.max) { nos.set(k, s); sai.set(k, []); fila.push(k); } return nos.has(k) ? k : null; };
+  const vistas = new Set();
+  for (const s of sementes) {
+    if (vistas.has(chave(s))) continue;
+    vistas.add(chave(s));
+    const r = rodaVolta(m, id, s, PARADO_VOLTA);
+    if (r) poe(r);
+  }
+  while (fila.length) {
+    const k = fila.shift(), s = nos.get(k);
+    for (const mov of movimentosVolta(id, s.bola)) {
+      const r = rodaVolta(m, id, s, mov), k2 = r && poe(r);
+      if (k2 && k2 !== k) sai.get(k).push([k2, mov.n]);
+    }
+  }
+  // ilhas: componentes fortemente ligados (Tarjan, sem recursão)
+  const ilha = new Map(), idx = new Map(), low = new Map(), pilha = [], naPilha = new Set();
+  let cont = 0, nIlhas = 0;
+  for (const raiz of nos.keys()) {
+    if (idx.has(raiz)) continue;
+    const trilha = [[raiz, 0]];
+    idx.set(raiz, cont); low.set(raiz, cont); cont++; pilha.push(raiz); naPilha.add(raiz);
+    while (trilha.length) {
+      const topo = trilha[trilha.length - 1], [v, i] = topo, viz = sai.get(v);
+      if (i < viz.length) {
+        topo[1]++;
+        const w = viz[i][0];
+        if (!idx.has(w)) { idx.set(w, cont); low.set(w, cont); cont++; pilha.push(w); naPilha.add(w); trilha.push([w, 0]); }
+        else if (naPilha.has(w)) low.set(v, Math.min(low.get(v), idx.get(w)));
+        continue;
+      }
+      trilha.pop();
+      if (trilha.length) { const u = trilha[trilha.length - 1][0]; low.set(u, Math.min(low.get(u), low.get(v))); }
+      if (low.get(v) === idx.get(v)) {
+        let w;
+        do { w = pilha.pop(); naPilha.delete(w); ilha.set(w, nIlhas); } while (w !== v);
+        nIlhas++;
+      }
+    }
+  }
+  // Ilha de passagem (até 3 lugares, ou só de post-it, que cai) com saída: um pouso no caminho da queda (o pé da rampa,
+  // a quina de um degrau). Não é chegada nem partida: conta onde se vai parar depois dela.
+  const tam = new Array(nIlhas).fill(0), soPlat = new Array(nIlhas).fill(true), saidas = [...Array(nIlhas)].map(() => new Map());
+  for (const [k, s] of nos) { tam[ilha.get(k)]++; if (!s.plat) soPlat[ilha.get(k)] = false; }
+  for (const [k, viz] of sai) {
+    for (const [k2, mov] of viz) {
+      const a = ilha.get(k), b = ilha.get(k2);
+      if (a === b) continue;
+      if (!saidas[a].has(b)) saidas[a].set(b, new Set());
+      saidas[a].get(b).add(mov);
+    }
+  }
+  const passagem = (i) => (tam[i] <= 3 || soPlat[i]) && saidas[i].size > 0, memo = new Map();
+  const destinos = (i) => {
+    if (!passagem(i)) return [i];
+    if (!memo.has(i)) { memo.set(i, []); const r = new Set(); for (const j of saidas[i].keys()) for (const d of destinos(j)) r.add(d); memo.set(i, [...r]); }
+    return memo.get(i);
+  };
+  const grupos = new Map();
+  for (let a = 0; a < nIlhas; a++) {
+    if (passagem(a)) continue;
+    for (const [b, movs] of saidas[a]) {
+      for (const d of destinos(b)) {
+        const g = grupos.get(d) || { para: d, de: new Set(), movs: new Set() };
+        g.de.add(a); movs.forEach((x) => g.movs.add(x)); grupos.set(d, g);
+      }
+    }
+  }
+  return { nos, ilha, nIlhas, idas: [...grupos.values()], m };
+}
+// Faixa de blocos de uma ilha (para ler: "c 9-23, l 47" = das colunas 9 a 23, em pé na linha 47)
+function faixaIlha(V, n) {
+  const ls = new Map();
+  for (const [k, s] of V.nos) {
+    if (V.ilha.get(k) !== n) continue;
+    const l = Math.round(s.y / TILE) - 1, c = Math.floor(s.x / TILE), f = ls.get(l) || [Infinity, -Infinity];
+    ls.set(l, [Math.min(f[0], c), Math.max(f[1], c)]);
+  }
+  return [...ls].sort((a, b) => b[0] - a[0]).map(([l, [c0, c1]]) => `c ${c0}-${c1} l ${l}`).join(', ');
+}
+// Por onde cada herói passa em pé na solução do robô (as sementes) e o mundo dele no fim
+function trilhaRobo(def) {
+  const m = new Mundo(def, { bot: new Bot(def.roteiro), rapido: true }), s = { marreta: [], fiapo: [], pudim: [] };
+  for (let t = 0, k = 0; t < (def.tmax || 90) && m.estado === 'jogando'; t += Jogo.PASSO, k++) {
+    m.passo(Jogo.PASSO, {});
+    if (k % 12) continue;
+    for (const h of m.herois) if (h.noChao && h.estado === 'chao' && !h.apoio && !h.plat) s[h.id].push({ x: h.x, y: Math.round(h.y) });
+  }
+  return { sementes: s, fim: m };
+}
+function confereVolta(def) {
+  const r = [], { sementes, fim } = trilhaRobo(def), decl = def.semVolta || [];
+  const mundos = { inicio: mundoSozinho(new Mundo(def, { rapido: true })), fim: mundoSozinho(fim) };
+  const ids = (d) => (d.quem === 'todos' ? ORDEM : [].concat(d.quem));
+  for (const id of ORDEM) {
+    for (const situacao of ['inicio', 'fim']) {
+      const V = mapaVolta(mundos[situacao], id, sementes[id]);
+      const naIlha = (g, [c, l]) => [...V.nos].some(([k, s]) => V.ilha.get(k) === g.para && Math.floor(s.x / TILE) === c && Math.round(s.y / TILE) - 1 === l);
+      const soltas = V.idas.filter((g) => !decl.some((d) => ids(d).includes(id) && (!d.situacao || d.situacao === situacao) && naIlha(g, d.para)));
+      r.push({ sala: def.nome, nome: `ida sem volta: ${id}, ${situacao === 'inicio' ? 'no começo' : 'com tudo resolvido'} (${V.nos.size} lugares, ${V.nIlhas} ilhas)`,
+        venceu: !soltas.length && V.nos.size < VOLTA.max,
+        log: soltas.map((g) => `cai em [${faixaIlha(V, g.para)}] vindo de [${[...g.de].map((i) => faixaIlha(V, i)).join(' | ')}] (${[...g.movs].join(', ')})`) });
+    }
+  }
+  return r;
+}
+Jogo.voltas = async function (nome = 'mesa3') {
+  const def = await (await fetch(`fases/${nome}.json`, { cache: 'no-store' })).json();
+  return confereVolta(def);
+};
+
 Jogo.testaFases = async function () {
   if (typeof Sprites !== 'undefined' && Sprites.ativo) { // (os desenhos carregando: espera, senão a conferência do desenho não roda)
     for (let i = 0; i < 200 && !ORDEM.every((id) => Sprites.pronto(id)); i++) await new Promise((ok) => setTimeout(ok, 50));
   }
-  const r = [...confereEmpurra(), ...confereEncosta(), ...confereGangorra(), ...confereCarimbo(), ...conferePostit()];
+  const r = [...confereParede(), ...confereLixeira(), ...confereEmpurra(), ...confereEncosta(), ...confereGangorra(), ...confereCarimbo(), ...conferePostit()];
   for (const nome of FASES_PROVADAS) {
     const def = await (await fetch(`fases/${nome}.json`, { cache: 'no-store' })).json();
     const x = simula(def, def.roteiro, def.tmax);
@@ -990,9 +1510,18 @@ Jogo.testaFases = async function () {
       const m = new Mundo(def, { bot: new Bot(a.r), rapido: true }), h = m.herois.find((q) => q.id === a.id);
       if (a.prepara) a.prepara(m);
       let pisou = false;
-      for (let t = 0; t < 40 && m.bot.i < a.r.length; t += Jogo.PASSO) { m.passo(Jogo.PASSO, {}); if (h.noChao && h.y <= a.ymax) pisou = true; }
+      for (let t = 0; t < 40 && m.bot.i < a.r.length; t += Jogo.PASSO) { m.passo(Jogo.PASSO, {}); if (a.onde ? a.onde(h) : h.noChao && h.y <= a.ymax) pisou = true; }
       r.push({ sala: nome, nome: `proibido: ${a.nome}`, venceu: !pisou, log: [`${a.id} x=${h.x.toFixed(0)} y=${h.y.toFixed(0)}`] });
     }
+    for (const e of FASES_ERROS[nome] || []) {
+      const m = new Mundo(def, { bot: new Bot(e.r), rapido: true });
+      for (let t = 0; t < 60 && m.bot.i < e.r.length; t += Jogo.PASSO) m.passo(Jogo.PASSO, {});
+      const dano = m.log.filter((l) => /: -1 /.test(l));
+      r.push({ sala: nome, nome: `erro: ${e.nome}`, venceu: m.bot.i >= e.r.length && e.ok(m) && !dano.length,
+        log: [`comando ${m.bot.i}/${e.r.length}`, m.herois.map((h) => `${h.id} x=${h.x.toFixed(0)} y=${h.y.toFixed(0)}`).join(' '), ...dano] });
+    }
+    r.push(...confereVolta(def));
+    if (def.mapa.some((l) => l.includes('K'))) r.push(conferePonto(def));
   }
   return r;
 };

@@ -62,6 +62,18 @@
   @keyframes some { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
 
   .dir section { margin-bottom: 6px; }
+  #painel-sel { background: #3a2f29; border: 2px solid var(--linha); border-radius: 10px; padding: 4px 10px 8px; margin: 4px 0 10px; }
+  #painel-sel .sel-nome { font: 18px "Luckiest Guy", "Arial Black", sans-serif; color: var(--papel); margin: 2px 0; }
+  #painel-sel .linha { margin-top: 6px; }
+  #painel-sel button { font-size: 13px; padding: 4px 8px 2px; box-shadow: 0 2px 0 var(--tinta); }
+  #painel-sel .campo { justify-content: space-between; font-size: 15px; color: #e8dfd0; }
+  #painel-sel .campo input[type=number] { width: 80px; }
+  #painel-sel .amostra { width: 28px; height: 24px; padding: 0; font-size: 13px; }
+  #painel-sel .amostra.sel { outline: 3px solid var(--ouro); outline-offset: 1px; }
+  #painel-sel select { font: 15px "Patrick Hand", "Comic Sans MS", sans-serif; color: var(--tinta); background: var(--papel);
+    border: 2.5px solid var(--tinta); border-radius: 8px; padding: 2px 6px; }
+  dialog#dlg-ajuda { width: min(620px, 94vw); }
+  dialog#dlg-ajuda p { margin: 4px 0 8px; line-height: 1.25; color: #e8dfd0; }
   .dir p { margin: 4px 0; color: #cbbfae; font-size: 15px; line-height: 1.2; }
   .cruz { display: grid; grid-template-columns: repeat(3, auto); gap: 4px; justify-content: start; align-items: center; margin-top: 6px; }
   .cruz div { display: flex; gap: 3px; }
@@ -98,7 +110,8 @@
   <button id="b-novo">Novo</button>
   <button id="b-abrir" title="Minhas fases, fases do jogo, tutorial, gerada">Abrir</button>
   <button id="b-salvar" title="Guarda em Minhas fases, neste navegador; no PC, também em fases/ (Ctrl+S)">Salvar</button>
-  <button id="b-jogar" class="forte" title="Abre a fase no jogo, numa aba ao lado">▶ Jogar</button>
+  <button id="b-jogar" class="forte" title="Joga a fase do começo">▶ Jogar</button>
+  <button id="b-daqui" title="Clique no chão onde os heróis começam e jogue dali (para testar um trecho)">▶ daqui</button>
   <span class="sep"></span>
   <button id="b-desfaz" title="Desfazer (Ctrl+Z)">↶</button>
   <button id="b-refaz" title="Refazer (Ctrl+Y)">↷</button>
@@ -107,6 +120,7 @@
     <button id="b-menos" title="Afastar (roda do mouse)">−</button>
     <button id="b-ajusta" title="A fase inteira na tela">ajustar</button>
     <button id="b-mais" title="Aproximar (roda do mouse)">+</button>
+    <button id="b-ajuda" title="Como usar o editor (tecla ?)">?</button>
   </div>
 </header>
 
@@ -119,8 +133,12 @@
 </main>
 
 <aside class="dir">
+  <section id="painel-sel">
+    <h3>Selecionado</h3>
+    <div id="sel-info"></div>
+  </section>
   <section>
-    <h3>Tamanho</h3>
+    <h3>Tamanho da fase</h3>
     <p id="tam"></p>
     <div class="cruz">
       <span></span><div><button data-lado="cima" data-d="1" title="Linha a mais em cima">+</button><button data-lado="cima" data-d="-1" title="Tira a linha de cima">−</button></div><span></span>
@@ -157,7 +175,7 @@
 
 <footer>
   <span id="pos"></span>
-  <span>esquerdo pinta · direito apaga · Shift+arrastar: retângulo · Alt+clique: pega a peça · espaço+arrastar: move · roda: zoom · tecla = letra da peça</span>
+  <span>Selecionar (Esc): clique e arraste; alças mudam o tamanho; setas empurram; Ctrl+C / Ctrl+V / Ctrl+D; Delete apaga · com peça na mão: esquerdo pinta, direito apaga, Shift+arrastar enche um retângulo · espaço+arrastar ou botão do meio: anda na tela · roda: zoom · ?: ajuda</span>
 </footer>
 
 <dialog id="dlg-abrir">
@@ -176,7 +194,36 @@
   <textarea id="colar" placeholder='{"nome": "...", "mapa": ["....", "####"]}'></textarea>
   <div class="linha" style="margin-top:6px"><button id="b-colar">Abrir o JSON</button></div>
   <h3>Arquivo</h3>
-  <div class="linha"><button id="b-baixar" title="Baixa a fase aberta como arquivo .json (para levar para outro computador)">Baixar esta fase (.json)</button></div>
+  <div class="linha"><button id="b-baixar" title="Baixa a fase aberta como arquivo .json (para levar para outro computador)">Baixar esta fase (.json)</button>
+    <button id="b-copiar" title="Copia a fase aberta (o JSON inteiro) para colar na conversa com o Claude ou em outro lugar — funciona também no link do claude.ai, onde baixar não funciona">Copiar JSON</button></div>
+</dialog>
+
+<dialog id="dlg-ajuda">
+  <button class="fecha">Fechar</button>
+  <h2>Como usar</h2>
+  <h3>Selecionar (a seta, tecla Esc)</h3>
+  <p>Clique em qualquer coisa: uma peça (herói, inimigo, alavanca...), um bloco (pega a prateleira ou o degrau inteiro),
+    a estante ou um enfeite. O nome aparece em cima e o painel <b>Selecionado</b>, à direita, mostra o que dá para mudar.</p>
+  <p><b>Arraste</b> para mudar de lugar: a fase muda junto enquanto você arrasta. Se o contorno ficar vermelho, ali tem
+    outra coisa e a peça volta para onde estava.</p>
+  <p>Os <b>quadradinhos</b> nos cantos e nos lados mudam o tamanho: da estante, da prateleira, da escada, do portão e do
+    enfeite.</p>
+  <p>Arraste no <b>vazio</b> para pegar uma área. Depois dá para arrastar a área inteira, copiar, encher ou apagar.</p>
+  <h3>O que encosta se junta</h3>
+  <p>Blocos iguais encostados viram uma peça só: papelão encostado vira uma laje inteira; livros deitados da mesma cor
+    na mesma fileira viram um livro só (cores diferentes lado a lado ficam livros separados: escolha a cor na paleta ou
+    no painel). Peças (herói, alavanca, inimigo, tachinha...) ocupam um bloco cada e não ficam em cima de bloco: ao
+    arrastar, só caem num lugar vazio. Clicando num inimigo, o mapa mostra por onde ele anda (amarelo) e onde ataca
+    (vermelho).</p>
+  <h3>Teclas</h3>
+  <p>Setas: empurra um bloco · Delete: apaga · Ctrl+C e Ctrl+V: copia e cola onde estiver o mouse · Ctrl+D: duplica
+    ao lado · F: vira (inimigo, enfeite) · Ctrl+Z / Ctrl+Y: desfaz / refaz · roda: zoom · espaço+arrastar: anda na tela</p>
+  <h3>Pintar</h3>
+  <p>Escolha uma peça na esquerda (ou a tecla da letra dela). Passando o mouse, a fase já mostra como fica. Clique
+    esquerdo põe, direito tira, Shift+arrastar enche um retângulo. Esc volta para Selecionar.</p>
+  <h3>Testar</h3>
+  <p><b>▶ Jogar</b> joga do começo. <b>▶ daqui</b>: clique no chão onde os três heróis começam e jogue só aquele
+    trecho. No jogo, Esc → Voltar ao editor.</p>
 </dialog>
 
 <script src="src/app.js"></script>
@@ -201,6 +248,7 @@
 <script src="src/gerador.js"></script>
 <script src="src/menu.js"></script>
 <script src="src/editor.js"></script>
+<script src="src/editor-sel.js"></script>
 <script>
   window.addEventListener('load', () => {
     const pronto = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();

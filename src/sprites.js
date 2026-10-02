@@ -163,6 +163,10 @@ const Sprites = {
     tesoureiro: { pasta: 'assets/tesoureiro/', altura: 113, ancora: 'tronco', mesmaEscala: true, ritmo: {
       corre: { fps: 14 }, derrotado: { ancora: 'massa' }, amassado: { ancora: 'massaPe' } } },
     lixeira: { pasta: 'assets/lixeira/', altura: 62, ancora: 'pes', mesmaEscala: true, ritmo: { derrotado: { ancora: 'massa' } } },
+    // blindado (folha blindado-1, 01/10): soldadinho de lata de corda, tampinha de garrafa de capacete. Andar de
+    // brinquedo: passo, parado, o outro passo, parado (os 2 quadros de andar e o parado, a cada 12 px)
+    blindado: { pasta: 'assets/blindado/', altura: 110, ancora: 'pes', mesmaEscala: true, ritmo: {
+      anda: { usa: [2, 1, 3, 1], passo: 12 }, cai: { ancora: 'massa' }, derrotado: { ancora: 'massa' } } },
   },
   imgs: {},
   prontos: {},
@@ -359,14 +363,23 @@ const Sprites = {
     }
     return f * (costas - frente);
   },
-  // até onde está livre para o lado s (px a partir do meio da caixa, de meia até ate), entre as alturas y0 e y1
+  // até onde está livre para o lado s (px a partir do meio da caixa, de meia até ate), entre as alturas y0 e y1 (os
+  // blocos e o estojo de zíper, que também é uma face: quem empurra encosta a mão nele)
   _livre(n, x, s, meia, ate, y0, y1) {
     const l0 = Math.floor(y0 / TILE), l1 = Math.floor(y1 / TILE);
+    let livre = ate;
     for (let c = Math.floor((x + s * (meia + 0.5)) / TILE); ; c += s) {
       const face = s > 0 ? c * TILE - x : x - (c + 1) * TILE;
-      if (face >= ate) return ate;
-      for (let l = l0; l <= l1; l++) if (n.solido(c, l)) return Math.max(meia, face);
+      if (face >= ate) break;
+      let bate = false;
+      for (let l = l0; l <= l1; l++) if (n.solido(c, l)) bate = true;
+      if (bate) { livre = Math.max(meia, face); break; }
     }
+    for (const e of n.estojos || []) {
+      const k = e.caixa(), face = s > 0 ? k.x0 - x : x - k.x1;
+      if (k.y1 > y0 && k.y0 < y1 && face >= meia - 1 && face < livre) livre = Math.max(meia, face);
+    }
+    return livre;
   },
   // Perfil da animação: até onde o desenho vai para a frente e para as costas (px do jogo a partir do meio da caixa,
   // olhando para a direita), por faixa de altura acima do pé; o de cada quadro (q) e o maior deles. Medido uma vez, até

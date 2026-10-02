@@ -107,15 +107,16 @@ const Cenario = {
     ctx.restore();
   },
 
-  // Nuvem pendurada por um fio (teatrinho de papel); topo = onde o fio está preso (o alto da tela, ou o teto)
-  nuvem(ctx, x, y, s, t, fase, topo = -10) {
+  // Nuvem pendurada por um fio (teatrinho de papel); topo = onde o fio está preso (o alto da tela: a ponta nunca
+  // aparece); tipo = qual das três nuvens da IA (sem ele, sai da fase)
+  nuvem(ctx, x, y, s, t, fase, topo = -10, tipo = null) {
     const dy = Math.sin(t * 0.9 + fase) * 4, rot = Math.sin(t * 0.7 + fase) * 0.03;
-    Estilo.traco(ctx, (c) => { c.beginPath(); c.moveTo(x + 6 * s, topo); c.lineTo(x + 6 * s, y + dy - 26 * s); }, 'rgba(90,80,70,0.55)', 1.2, { elev: 0.5 });
+    Estilo.traco(ctx, (c) => { c.beginPath(); c.moveTo(x + 6 * s, topo); c.lineTo(x + 6 * s, y + dy - 26 * s); }, 'rgba(90,80,70,0.55)', 1.2 + s * 0.15, { elev: 0.5 });
     ctx.save();
     ctx.translate(x, y + dy);
     ctx.rotate(rot);
     ctx.scale(s, s);
-    const k = Math.abs(Math.round(fase * 10)) % 3; // qual das três nuvens da IA
+    const k = tipo ?? Math.abs(Math.round(fase * 10)) % 3; // qual das três nuvens da IA
     if (comObjetos() && Objetos.fundo(ctx, `nuvem${k + 1}`, 4, -4, [62, 52, 40][k], true)) { ctx.restore(); return; }
     Estilo.carimbo(ctx, 'nuvem', [-56, -40, 62, 24], (g) => {
       Estilo.forma(g, (c) => {

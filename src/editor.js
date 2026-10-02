@@ -10,17 +10,23 @@
 // Na URL: ?minha=id (Minhas fases), ?abre=nome (fases/nome.json), ?gerada=6&semente=7, ?tutorial=2, ?nova (em branco)
 // — sem nada, volta o rascunho.
 
+// (30/09, usuário: "como eu seleciono um objeto? precisava clicar e arrastar"; "não estou vendo livro, estante") —
+// Mover é a ferramenta de começo; estante, livros deitados e enfeites entraram na paleta; a sala foi para o fim
 const GRUPOS = [
-  ['Ferramentas', [['.', 'Apagar'], ['sala', 'Sala (papel de parede): arraste um retângulo; botão direito dentro apaga']]],
-  ['Blocos', [['#', 'Papelão'], ['C', 'Parede fraca (papelão remendado) — o soco do Marreta quebra'], ['F', 'Folha de papel — a bundada do Pudim rasga'],
+  ['Ferramentas', [['mover', 'Selecionar (Esc): clique numa peça, num bloco, na estante ou num enfeite; arraste para mudar de lugar; os quadradinhos mudam o tamanho; no vazio, arraste para pegar uma área. O painel à direita mostra o que dá para mudar'],
+    ['.', 'Apagar']]],
+  ['Blocos', [['#', 'Papelão'], ['b', 'Livros deitados: bloco sólido como o papelão; cada fileira é um livro (empilhe para degrau)'],
+    ['estante', 'Estante de livros: arraste um retângulo, do topo até o chão. Os blocos dela viram prateleiras cheias de livros (o topo se pisa). Apague embaixo para abrir a passagem; um portão da alavanca (L) dentro dela vira o livro-portão. Botão direito dentro tira a estante'],
+    ['C', 'Parede fraca (papelão remendado) — o soco do Marreta quebra'], ['F', 'Folha de papel — a bundada do Pudim rasga'],
     ['^', 'Lápis — machuca'], ['H', 'Escada de palitos (1 bloco de largura: só o Fiapo cabe)'],
     ['/', 'Rampa subindo para a direita (emende na diagonal para rampa longa)'], ['\\', 'Rampa subindo para a esquerda']]],
   ['Pisos', [['k', 'Cola (no bloco em cima do chão): anda devagar e não pula; inimigo e bola do Pudim grudam'],
     ['w', 'Corretivo (no bloco em cima do chão): escorrega — embalado, não freia nem vira']]],
   ['Corda', [['T', 'Tachinha — o Fiapo amarra a corda'], ['r', 'Rolo de barbante — mais uma corda para o Fiapo']]],
-  ['Objetos', [['d', 'Rolo de durex — empurra; o soco do Marreta ou a bola do Pudim manda rolando (boliche); degrau; segura a placa'],
-    ['v', 'Régua-gangorra (no bloco do calço), ponta esquerda embaixo — quem cai na ponta de cima lança quem está na outra; a bundada do Pudim lança o Fiapo alto'],
-    ['V', 'Régua-gangorra, ponta direita embaixo'],
+  ['Objetos', [['R', 'Trena (no bloco em cima do chão, na beira de um vão) — a fita é a ponte por cima do vão; a bundada do Pudim no botão recolhe (quem está nela cai) e estica de novo. Do chão o Pudim não alcança o botão: ponha um degrau de 1 bloco do lado'],
+    ['E', 'Estojo de zíper (no bloco em cima do chão: o meio dele; 5 blocos de largura, 2 de altura) — só o Marreta empurra; em cima é piso; empurra inimigo, segura a estocada; cai em buraco de 5 blocos e 2 de fundo e fica rente ao chão'],
+    ['d', 'Rolo de durex — empurra; o soco do Marreta ou a bola do Pudim manda rolando (boliche); degrau; segura a placa'],
+    ['v', 'Régua-gangorra (no bloco do calço) — quem cai na ponta de cima lança quem está na outra; a bundada do Pudim lança o Fiapo alto. A ponta que fica embaixo: tecla F ou o painel'],
     ['n', 'Post-it colado no fundo (a dobra é um degrau na linha de baixo do bloco) — pisou, treme, cai e volta piscando; de 3 em 3 blocos só o Fiapo sobe'],
     ['c', 'Carimbo (no bloco logo abaixo de um teto) — desce até o chão num ritmo; encostar machuca, inimigo embaixo é achatado. Com 6 blocos de vão todos passam por baixo no tempo certo']]],
   ['Botões e portões', [['B', 'Botão pesado — só o Pudim, fica apertado'], ['p', 'Placa — só enquanto alguém pisa'], ['l', 'Alavanca'],
@@ -28,16 +34,35 @@ const GRUPOS = [
   ['Chaves e portas', [['x', 'Chave vermelha'], ['y', 'Chave azul'], ['z', 'Chave amarela'],
     ['X', 'Porta vermelha'], ['Y', 'Porta azul'], ['Z', 'Porta amarela']]],
   ['Inimigos', [['g', 'Guarda — lança de lápis'], ['e', 'Escudeiro — régua de escudo'], ['o', 'Borracha'],
-    ['q', 'Grampeador olhando para a esquerda'], ['Q', 'Grampeador olhando para a direita'],
+    ['q', 'Grampeador — atira grampos para a frente; o Pudim rebate. Para que lado olha: tecla F ou o painel'],
     ['j', 'Lixeira — joga bolinha de papel em arco; o soco na hora certa rebate (CESTA!). Ponha no alto'],
-    ['u', 'Tesoureiro — de guarda; viu, corre sem frear: crava na parede, gruda na cola, cai no buraco, corta corda']]],
-  ['Heróis e saída', [['1', 'Marreta'], ['2', 'Fiapo'], ['3', 'Pudim'], ['S', 'Saída (2 × 3 blocos; o clique é o canto de baixo à esquerda)']]],
+    ['u', 'Tesoureiro — de guarda; viu, corre sem frear: crava na parede, gruda na cola, cai no buraco, corta corda'],
+    ['a', 'Blindado — soldadinho numa lata: nada derruba (soco, bola, bundada, pisão: CLANG); só cair (lápis, fosso, a trena recolhida)']]],
+  ['Heróis e saída', [['1', 'Marreta'], ['2', 'Fiapo'], ['3', 'Pudim'], ['S', 'Saída (2 × 3 blocos; o clique é o canto de baixo à esquerda)'],
+    ['K', 'Ponto de controle (bandeirinha, no chão): o primeiro herói que encosta guarda a fase inteira — alavancas, portões, cordas, inimigos; quem perde os corações (ou aperta R) volta para lá']]],
+  ['Enfeites (sem física, no fundo)', [['deco:pote', 'Pote de lápis'], ['deco:caderno', 'Caderno em pé'], ['deco:luminaria', 'Luminária'],
+    ['deco:caneca', 'Caneca de pincéis'], ['deco:etiqueta', 'Etiqueta (na frente do chão)']]],
+  ['Na frente (sem física)', [['I', 'Pilar de lápis (no bloco em cima do chão): sobe até o teto, como se o segurasse; os heróis passam por trás'],
+    ['i', 'Pilar de marca-texto (no bloco em cima do chão): sobe até o teto; os heróis passam por trás']]],
+  ['Fundo de prédio', [['sala', 'Parede de sala (papel de parede), para fases dentro de um prédio: com uma sala na fase, o céu some e fora das salas fica escuro. Arraste um retângulo; botão direito dentro apaga']]],
 ];
-const NOME_PECA = Object.fromEntries(GRUPOS.flatMap((g) => g[1]));
+// (30/09, usuário: "por que tem dois grampeadores, se já dá para virar?" — uma peça só; a outra letra continua no mapa)
+const NOME_PECA = Object.assign(Object.fromEntries(GRUPOS.flatMap((g) => g[1])),
+  { Q: 'Grampeador olhando para a direita', V: 'Régua-gangorra com a ponta direita embaixo' });
+// livros deitados: as cores (a ordem dos desenhos em LIVRO_DEITADO.nomes); sem cor escolhida, sorteada pela posição
+const CORES_LIVRO = [['#d0463c', 'vermelho'], ['#3b6fc4', 'azul'], ['#3f9a5a', 'verde'], ['#8a55c2', 'roxo']];
+// enfeites (def.decoracao): altura padrão na escala dos da Mesa (~1,27 px por px do desenho); a etiqueta vai na cara da
+// frente do chão. (Os pequenos e os livros de 3/4 ficaram de fora: sumiam atrás do tampo ou pediam para pular em cima.)
+const ENFEITES = { pote: { a: 300 }, caderno: { a: 250 }, luminaria: { a: 300 }, caneca: { a: 230 }, etiqueta: { a: 60, c: 'frente', dy: 90 } };
+const TERRENO = '#CF^/\\kwb'; // o Mover não pega bloco (arrastar ali seleciona uma área)
+const GRUPO_INTEIRO = 'SGPLXYZH'; // peças de vários blocos: o Mover leva o grupo junto
 const CANAIS_ED = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6'];
 const COM_CANAL = 'BplGPL';
-const LETRA_ESPECIE = { guarda: 'g', escudeiro: 'e', borracha: 'o', lixeira: 'j', tesoureiro: 'u' }; // grampeador: q (←) ou Q (→)
-const OPS_X = { anda: [1], vai: [1], rola: [1], soca: [1, 2], bundada: [1, 2], rolaEm: [1, 2], rebate: [1, 2] }; // comandos do robô com x
+const LETRA_ESPECIE = { guarda: 'g', escudeiro: 'e', borracha: 'o', lixeira: 'j', tesoureiro: 'u', blindado: 'a' }; // grampeador: q (←) ou Q (→)
+// comandos do robô com x (posição no comando). (01/10: faltavam bundadaEm, pulaEm, carimbo, salta, cesta, isca e
+// espreita — a fase do usuário crescida 11 blocos para a esquerda ficou com o robô pulando no lugar velho)
+const OPS_X = { anda: [1], vai: [1], rola: [1], soca: [1, 2], bundada: [1, 2], barriga: [1, 2], rebate: [1, 2], desvia: [2], pisa: [2],
+  empurra: [1], bundadaEm: [1, 2], pulaEm: [1], carimbo: [1], salta: [1, 2], cesta: [1, 2], isca: [1], espreita: [2] };
 const CHAVE_JOGAR = 'lostkings-editor', CHAVE_RASCUNHO = 'lostkings-editor-rascunho';
 const guarda = (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } };
 // Confirmação no próprio botão: o 1º clique troca o texto (por 3 s), o 2º confirma — confirm() não aparece no claude.ai
@@ -58,9 +83,13 @@ function miniMapa(k) {
   if (k === 'F') return ['...', '#F#', '...'];
   if (k === 'k' || k === 'w') return ['...', k.repeat(3), '###'];
   if (k === 'd') return ['...', '...', '.d.', '###'];
+  if (k === 'R') return ['......', '.....R', '#....#', '#^^^^#', '######'];
+  if (k === 'E') return ['.......', '.......', '...E...', '#######'];
+  if (k === 'b') return ['.....', '..bb.', '.bbb.', 'bbbbb', '#####'];
   if (k === 'v' || k === 'V') return ['.......', '.......', `...${k}...`, '#######'];
   if (k === 'c') return ['#####', '..c..', '.....', '.....', '#####'];
   if (k === 'n') return ['.....', '..n..', '.....', '.....', '#####'];
+  if (k === 'I' || k === 'i') return ['#####', '.....', '.....', `..${k}..`, '#####'];
   if (k === 'l') return ['...', '...', '.l.', '###'];
   if ('CGPLXYZ'.includes(k)) return [`.${k}.`, `.${k}.`, '###'];
   return ['...', `.${k}.`, '###'];
@@ -73,17 +102,19 @@ function desenhaCena(g, cena, v, ceu) {
   n.desenhaFixo(g, v);
   n.desenhaVivo(g, 0, [false, false, false], v);
   for (const o of cena.inimigos) o.desenha(g, 0);
+  n.desenhaEstojos(g, v);
   for (const h of cena.herois) {
     const V = h.visual(0);
     Desenho.sombraChao(g, h.x, h.y + 2, h.cfg.w * 0.9);
     Desenho.personagem(g, h.ch, V.M, Object.assign({ f: h.f, t: 0, rosto: V.rosto, escala: ESC, pesPlanos: !V.mole && !V.giro,
       giro: null, quadro: V.quadro || null, pe: { x: h.x, y: h.y }, squash: 0, amarrado: false }, V.extra));
   }
+  n.desenhaFrente(g, v, null); // pilares (na frente dos heróis)
 }
 
 function montaCena(def) {
   const nivel = new Nivel(def);
-  const herois = ORDEM.filter((id) => nivel.spawns[id]).map((id) => new Heroi(id, nivel.spawns[id].x, nivel.spawns[id].y));
+  const herois = ORDEM.filter((id) => nivel.spawns[id]).map((id) => new Heroi(id, nivel.spawns[id].x, nivel.spawns[id].y).encaixa(nivel));
   const inimigos = [...nivel.inimigosDef, ...(def.inimigos || [])].map((d) => new Inimigo(d));
   return { nivel, herois, inimigos };
 }
@@ -101,10 +132,11 @@ const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().rep
 
 const Ed = {
   f: null, // a fase aberta: { nome, grade: [[letra]], canais, extras, salas, dicas, trechos, roteiro, tmax, cordas, origem }
-  peca: '#', canal: null, papel: 'quadriculado',
+  peca: 'mover', canal: null, papel: 'quadriculado', corLivro: null, // (corLivro: índice em CORES_LIVRO; null = sorteada)
   vista: { z: 1, x: 0, y: 0 }, dpr: 1, grade: true,
   desfaz: [], refaz: [], cena: null, def: null,
   mouse: null, arrasto: null, espaco: false, pedido: 0,
+  sel: null, // o item selecionado (editor-sel.js)
 
   init() {
     Estilo.init();
@@ -164,7 +196,13 @@ const Ed = {
       nome: def.nome || 'Sem nome', grade, extras, canais: (def.canais || []).map((q) => Object.assign({}, q)),
       salas: (def.salas || []).map((s) => Object.assign({}, s)), dicas: (def.dicas || []).slice(), trechos: def.trechos || null,
       roteiro: def.roteiro || null, tmax: def.tmax || null, cordas: def.cordas ?? 1, origem: def.origem || '',
-      decoracao: def.decoracao || null, // (não se edita aqui ainda: só não se perde ao salvar)
+      chaoMesa: !!def.chaoMesa, // (o chão de baixo é o tampo de madeira da mesa)
+      decoracao: (def.decoracao || []).map((q) => Object.assign({}, q)), // enfeites (Mover arrasta; + e − o tamanho)
+      // (também não se editam aqui ainda: o ritmo de cada carimbo, as estantes de livros e a cor fixa de um canal)
+      carimbos: (def.carimbos || []).map((q) => Object.assign({}, q)), estantes: (def.estantes || []).map((q) => Object.assign({}, q)),
+      coresCanal: def.coresCanal || null,
+      semVolta: (def.semVolta || []).map((q) => Object.assign({}, q, { para: q.para.slice() })), // (idas sem volta de propósito: confereVolta)
+      livros: Object.fromEntries((def.livros || []).map(([c, l, cor]) => [`${c},${l}`, cor])), // cor de cada bloco de livro ("c,l": 0-3)
     };
     this.salvaId = salvaId; this.desfaz = []; this.refaz = [];
     this.abriu();
@@ -196,9 +234,9 @@ const Ed = {
     } catch (e) { this.msg(`Não consegui abrir fases/${id}.json (${e.message}).`); }
   },
 
-  // A fase no formato do jogo (o mesmo do gerador e das salas à mão)
-  paraDef() {
-    const f = this.f, inimigos = [];
+  // A fase no formato do jogo (o mesmo do gerador e das salas à mão); f: a aberta ou uma cópia mudada (a prévia)
+  paraDef(f = this.f) {
+    const inimigos = [];
     const mapa = f.grade.map((lin, l) => lin.map((k, c) => {
       const x = f.extras[`${c},${l}`];
       if (x && ESPECIES[k]) {
@@ -212,7 +250,14 @@ const Ed = {
     if (f.trechos) d.trechos = f.trechos;
     if (f.roteiro) { d.roteiro = f.roteiro; d.tmax = f.tmax || 90 + f.roteiro.length * 2.2; }
     if (f.origem) d.origem = f.origem;
-    if (f.decoracao) d.decoracao = f.decoracao;
+    if (f.decoracao && f.decoracao.length) d.decoracao = f.decoracao;
+    if (f.carimbos && f.carimbos.length) d.carimbos = f.carimbos;
+    if (f.estantes && f.estantes.length) d.estantes = f.estantes;
+    if (f.coresCanal) d.coresCanal = f.coresCanal;
+    if (f.semVolta && f.semVolta.length) d.semVolta = f.semVolta;
+    if (f.chaoMesa) d.chaoMesa = true;
+    const livros = Object.entries(f.livros || {}).map(([k, cor]) => [...k.split(',').map(Number), cor]).filter(([c, l]) => f.grade[l] && f.grade[l][c] === 'b');
+    if (livros.length) d.livros = livros.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
     return JSON.parse(JSON.stringify(d));
   },
 
@@ -226,6 +271,7 @@ const Ed = {
     if (!de.length) return;
     para.push(JSON.stringify(this.f));
     this.f = JSON.parse(de.pop());
+    this.sel = null;
     document.getElementById('dicas').value = this.f.dicas.join('\n');
     document.getElementById('cordas').value = this.f.cordas;
     this.mudou();
@@ -245,15 +291,19 @@ const Ed = {
     if ('123'.includes(k)) for (const lin of G) for (let i = 0; i < lin.length; i++) if (lin[i] === k) lin[i] = '.';
     const canal = COM_CANAL.includes(k) ? this.canal : null;
     const antes = this.f.canais.find((q) => q.c === c && q.l === l);
-    if (G[l][c] === k && (antes ? antes.canal : null) === canal) return false;
+    const corAntes = (this.f.livros || {})[`${c},${l}`] ?? null; // (livro: pintar de outra cor por cima muda a cor)
+    if (G[l][c] === k && (antes ? antes.canal : null) === canal && (k !== 'b' || corAntes === this.corLivro)) return false;
     this._troca(c, l, k, canal);
     return true;
   },
   _troca(c, l, k, canal = null) {
+    const ch = `${c},${l}`;
     this.f.grade[l][c] = k;
-    delete this.f.extras[`${c},${l}`];
+    delete this.f.extras[ch];
     this.f.canais = this.f.canais.filter((q) => q.c !== c || q.l !== l);
     if (canal) this.f.canais.push({ c, l, canal });
+    if (this.f.livros) delete this.f.livros[ch];
+    if (k === 'b' && this.corLivro != null) (this.f.livros = this.f.livros || {})[ch] = this.corLivro;
   },
   // Linha de blocos entre dois pontos (arrastar rápido não deixa buraco)
   linha(a, b, k) {
@@ -284,7 +334,11 @@ const Ed = {
   },
   desloca(dc, dl) {
     const f = this.f, dx = dc * TILE, dy = dl * TILE;
-    for (const q of f.canais) { q.c += dc; q.l += dl; }
+    for (const q of [...f.canais, ...(f.carimbos || [])]) { q.c += dc; q.l += dl; }
+    for (const e of f.estantes || []) { e.c0 += dc; e.c1 += dc; e.l0 += dl; e.l1 += dl; }
+    for (const q of f.semVolta || []) { q.para[0] += dc; q.para[1] += dl; }
+    for (const q of f.decoracao || []) { q.x += dx; q.y += dy; }
+    f.livros = Object.fromEntries(Object.entries(f.livros || {}).map(([k, cor]) => { const [c, l] = k.split(',').map(Number); return [`${c + dc},${l + dl}`, cor]; }));
     const ex = {};
     for (const [k, v] of Object.entries(f.extras)) {
       const [c, l] = k.split(',').map(Number);
@@ -302,12 +356,14 @@ const Ed = {
   // ------------------------------------------------------------------ desenho
   mudou(rascunho = true) {
     this.def = this.paraDef();
-    this.cena = null;
+    this.cena = null; this.previa = null;
     this.avisos();
+    if (this.mostraSel) this.mostraSel();
     document.getElementById('tam').textContent = `${this.cols} × ${this.lins} blocos`;
-    if (rascunho) guarda(CHAVE_RASCUNHO, JSON.stringify({ def: this.def, salvaId: this.salvaId }));
+    if (rascunho) this.guardaRascunho();
     this.pede();
   },
+  guardaRascunho() { guarda(CHAVE_RASCUNHO, JSON.stringify({ def: this.def, salvaId: this.salvaId })); },
   pede() { if (!this.pedido) this.pedido = requestAnimationFrame(() => { this.pedido = 0; this.pinta(); this.pintaGuia(); }); },
   redimensiona() {
     const r = this.area.getBoundingClientRect();
@@ -340,11 +396,13 @@ const Ed = {
     g.fillRect(0, 0, this.cv.width, this.cv.height);
     if (!this.f) return;
     if (!this.cena) this.cena = montaCena(this.def);
-    const n = this.cena.nivel;
+    // prévia: arrastando ou com a peça na mão, a fase como vai ficar (a cópia mudada)
+    const P = this.previa, cena = P ? (P.cena || (P.cena = montaCena(this.paraDef(P.f)))) : this.cena;
+    const n = cena.nivel;
     this.transforma(g);
     g.save();
     g.beginPath(); g.rect(0, 0, n.largura, n.altura); g.clip();
-    desenhaCena(g, this.cena, this.visivel(), true);
+    desenhaCena(g, cena, this.visivel(), true);
     g.restore();
   },
 
@@ -393,7 +451,14 @@ const Ed = {
       g.fillStyle = cor; g.fillRect(c0 * TILE, l0 * TILE, (c1 - c0 + 1) * TILE, (l1 - l0 + 1) * TILE);
       g.strokeStyle = '#ffd23f'; g.lineWidth = 2.5 / z; g.strokeRect(c0 * TILE, l0 * TILE, (c1 - c0 + 1) * TILE, (l1 - l0 + 1) * TILE);
     };
-    if (a && (a.tipo === 'ret' || a.tipo === 'sala') && a.fim) {
+    // estantes: contorno quando a ferramenta da estante está na mão
+    if (this.peca === 'estante') {
+      g.setLineDash([8 / z, 6 / z]); g.strokeStyle = '#f1bf3a'; g.lineWidth = 2.5 / z;
+      for (const e of this.f.estantes || []) g.strokeRect(e.c0 * TILE, e.l0 * TILE, (e.c1 - e.c0 + 1) * TILE, (e.l1 - e.l0 + 1) * TILE);
+      g.setLineDash([]);
+    }
+    if (this.peca === 'mover') this.selGuia(g, z); // seleção, alças, o que o clique pega (editor-sel.js)
+    else if (a && (a.tipo === 'ret' || a.tipo === 'sala' || a.tipo === 'estante') && a.fim) {
       const cor = a.tipo === 'sala' ? 'rgba(59,123,224,0.22)' : a.k === '.' ? 'rgba(226,67,58,0.25)' : 'rgba(255,210,63,0.28)';
       caixa(Math.min(a.ini.c, a.fim.c), Math.min(a.ini.l, a.fim.l), Math.max(a.ini.c, a.fim.c), Math.max(a.ini.l, a.fim.l), cor);
     } else if (m && m.dentro && !a) {
@@ -412,17 +477,28 @@ const Ed = {
       for (const [k, nome] of pecas) {
         const b = document.createElement('button');
         b.className = 'peca'; b.title = `${nome}${k.length === 1 && k !== '.' ? ` — tecla ${k}` : ''}`;
-        b.innerHTML = `<canvas width="112" height="112"></canvas><span>${k === 'sala' ? 'sala' : k === '.' ? 'apagar' : k}</span>`;
+        const rotulo = k === '.' ? 'apagar' : k === 'mover' ? 'selecionar' : k.startsWith('deco:') ? k.slice(5) : k;
+        b.innerHTML = `<canvas width="112" height="112"></canvas><span>${rotulo}</span>`;
         b.onclick = () => this.escolhe(k);
         box.appendChild(b);
         this.botoes[k] = b;
+      }
+      if (grupo === 'Blocos') { // a cor dos livros deitados (aparece com os livros na mão)
+        const c = document.createElement('div'); c.className = 'chips'; c.id = 'cores-livro'; c.hidden = true; c.dataset.rotulo = 'Cor do livro (cores diferentes lado a lado = livros separados)';
+        for (const [i, [cor, nome]] of [[null, ['', 'sorteada']], ...CORES_LIVRO.map((q, j) => [j, q])]) {
+          const b = document.createElement('button'); b.textContent = nome; b.dataset.cor = i == null ? '' : i;
+          if (cor) { b.style.background = cor; b.style.color = '#fffdf6'; }
+          b.onclick = () => { this.corLivro = i; this.marcaChips(); this.previa = null; };
+          c.appendChild(b);
+        }
+        pal.appendChild(c);
       }
       if (grupo === 'Botões e portões') {
         const c = document.createElement('div'); c.className = 'chips'; c.id = 'canais'; c.dataset.rotulo = 'Canal (qual portão cada um abre)';
         c.title = 'Canal: botão, placa ou alavanca abre o portão do mesmo canal. "padrão": B abre G, p abre P, l abre L.';
         pal.appendChild(c);
       }
-      if (grupo === 'Ferramentas') {
+      if (grupo === 'Fundo de prédio') {
         const c = document.createElement('div'); c.className = 'chips'; c.id = 'papeis'; c.hidden = true; c.dataset.rotulo = 'Papel de parede da sala';
         for (const p of Object.keys(PAPEIS)) {
           const b = document.createElement('button'); b.textContent = p; b.dataset.p = p;
@@ -432,7 +508,7 @@ const Ed = {
         pal.appendChild(c);
       }
     }
-    this.escolhe('#');
+    this.escolhe('mover');
   },
   montaCanais() {
     const c = document.getElementById('canais');
@@ -449,17 +525,50 @@ const Ed = {
   marcaChips() {
     for (const b of document.querySelectorAll('#canais button')) b.classList.toggle('sel', (b.dataset.k || null) === this.canal);
     for (const b of document.querySelectorAll('#papeis button')) b.classList.toggle('sel', b.dataset.p === this.papel);
+    for (const b of document.querySelectorAll('#cores-livro button')) b.classList.toggle('sel', b.dataset.cor === (this.corLivro == null ? '' : String(this.corLivro)));
   },
   escolhe(k) {
     this.peca = k;
     for (const [q, b] of Object.entries(this.botoes)) b.classList.toggle('sel', q === k);
     document.getElementById('papeis').hidden = k !== 'sala';
+    document.getElementById('cores-livro').hidden = k !== 'b';
+    this.marcaChips();
+    if (k !== 'mover') this.sel = null;
+    this.previa = null; this.modoDaqui = false;
+    this.gv.style.cursor = k === 'mover' ? 'default' : 'crosshair';
+    if (this.f && this.mostraSel) this.mostraSel();
     this.pede();
   },
   pintaIcones() {
     for (const [k, b] of Object.entries(this.botoes)) {
       const cv = b.querySelector('canvas'), g = cv.getContext('2d');
       g.clearRect(0, 0, cv.width, cv.height);
+      if (k === 'mover') { // seta do mouse com as quatro setinhas de arrastar
+        g.lineWidth = 5; g.strokeStyle = '#2b1f2e'; g.lineJoin = 'round'; g.fillStyle = '#fffdf6';
+        g.beginPath(); g.moveTo(40, 24); g.lineTo(40, 84); g.lineTo(54, 71); g.lineTo(64, 92); g.lineTo(74, 87); g.lineTo(64, 66); g.lineTo(82, 66); g.closePath();
+        g.fill(); g.stroke();
+        g.fillStyle = '#f1bf3a'; g.lineWidth = 3;
+        for (const [x, y, r] of [[84, 30, 0], [84, 30, Math.PI / 2], [84, 30, Math.PI], [84, 30, -Math.PI / 2]]) {
+          g.save(); g.translate(x, y); g.rotate(r); g.beginPath(); g.moveTo(16, 0); g.lineTo(7, -7); g.lineTo(7, 7); g.closePath(); g.fill(); g.stroke(); g.restore();
+        }
+        continue;
+      }
+      if (k.startsWith('deco:')) { // o próprio desenho do enfeite
+        const img = Objetos.imgs[`decoracao/${k.slice(5)}`];
+        if (img) { const s = Math.min(96 / img.width, 96 / img.height); g.drawImage(img, 56 - img.width * s / 2, 104 - img.height * s, img.width * s, img.height * s); }
+        continue;
+      }
+      if (k === 'estante') {
+        try {
+          const mapa = ['......', '.####.', '.####.', '.####.', '.####.', '.####.', '######'];
+          const cena = montaCena({ nome: k, mapa, canais: [], salas: [], estantes: [{ c0: 1, c1: 4, l0: 1, l1: 5 }] });
+          const L = 6 * TILE, A = 7 * TILE, s = Math.min(cv.width / L, cv.height / A) * 0.96;
+          g.save(); g.translate((cv.width - L * s) / 2, (cv.height - A * s) / 2); g.scale(s, s);
+          desenhaCena(g, cena, { x0: 0, y0: 0, x1: L, y1: A }, false);
+          g.restore();
+        } catch (e) { console.warn('ícone', k, e); }
+        continue;
+      }
       if (k === '.' || k === 'sala') { // ícones que não são peça: desenho simples
         g.lineWidth = 5; g.strokeStyle = '#2b1f2e'; g.lineJoin = 'round';
         if (k === '.') {
@@ -503,14 +612,28 @@ const Ed = {
       this.mouse = b;
       if (e.button === 1 || (e.button === 0 && this.espaco)) { this.arrasto = { tipo: 'mao', x: e.clientX, y: e.clientY, vx: this.vista.x, vy: this.vista.y }; return; }
       if (e.button !== 0 && e.button !== 2) return;
+      if (this.modoDaqui) { if (e.button === 0) this.jogaDaqui(b); else { this.modoDaqui = false; this.msg('Jogar daqui: cancelado.'); } return; }
       if (e.button === 0 && e.altKey) { if (b.dentro) this.pega(b); return; }
       const apaga = e.button === 2;
+      this.previa = null;
       if (this.peca === 'sala') {
         if (apaga) this.tiraSala(b.wx, b.wy);
         else this.arrasto = { tipo: 'sala', ini: b, fim: b };
         this.pede();
         return;
       }
+      if (this.peca === 'estante') {
+        if (apaga) this.tiraEstante(b.c, b.l);
+        else if (b.dentro) this.arrasto = { tipo: 'estante', ini: b, fim: b };
+        this.pede();
+        return;
+      }
+      if (this.peca.startsWith('deco:')) {
+        if (apaga) { const i = this.decoEm(b.wx, b.wy); if (i >= 0) { this.foto(); this.f.decoracao.splice(i, 1); this.mudou(); } }
+        else this.poeDeco(b, this.peca.slice(5));
+        return;
+      }
+      if (this.peca === 'mover') { this.selDown(b, e); return; }
       const k = apaga ? '.' : this.peca;
       if (e.shiftKey) { this.arrasto = { tipo: 'ret', k, ini: b, fim: b }; this.pede(); return; }
       this.foto();
@@ -521,9 +644,10 @@ const Ed = {
       const b = this.bloco(e), a = this.arrasto;
       this.mouse = b;
       this.mostraPosicao(b);
-      if (!a) { this.pede(); return; }
+      if (!a) { this.previaPinta(b); this.pede(); return; }
       if (a.tipo === 'mao') { this.vista.x = a.vx - (e.clientX - a.x) / this.vista.z; this.vista.y = a.vy - (e.clientY - a.y) / this.vista.z; this.pede(); return; }
-      if (a.tipo === 'ret' || a.tipo === 'sala') { a.fim = b; this.pede(); return; }
+      if (a.sel) { this.selMove(b); return; }
+      if (['ret', 'sala', 'estante'].includes(a.tipo)) { a.fim = b; this.pede(); return; }
       if (a.tipo === 'pinta' && (b.c !== a.ult.c || b.l !== a.ult.l)) {
         const k = a.k === 'S' || '123'.includes(a.k) ? null : a.k; // saída e herói: arrastar move (põe só onde soltou)
         if (k != null ? this.linha(a.ult, b, k) : this.poe(b.c, b.l, a.k)) { a.mudou = true; this.mudou(); }
@@ -537,21 +661,26 @@ const Ed = {
       if (a.tipo === 'pinta' && !a.mudou) this.desfaz.pop(); // clique que não mudou nada não entra no desfazer
       if (a.tipo === 'ret') { this.foto(); if (this.retangulo(a.ini, a.fim, a.k)) this.mudou(); else this.desfaz.pop(); }
       if (a.tipo === 'sala') this.poeSala(a.ini, a.fim);
+      if (a.tipo === 'estante') this.poeEstante(a.ini, a.fim);
+      if (a.sel) this.selUp(a);
+      this.gv.style.cursor = this.peca === 'mover' ? 'default' : 'crosshair';
       this.pede();
     };
     gv.addEventListener('pointerup', solta);
     gv.addEventListener('pointercancel', solta);
-    gv.addEventListener('pointerleave', () => { if (!this.arrasto) { this.mouse = null; this.pede(); } });
+    gv.addEventListener('pointerleave', () => { if (!this.arrasto) { this.mouse = null; this.previa = null; this.pede(); } });
     gv.addEventListener('wheel', (e) => { e.preventDefault(); const b = this.bloco(e); this.zoom(Math.exp(-e.deltaY * 0.0015), b.mx, b.my); }, { passive: false });
     window.addEventListener('keydown', (e) => {
       const campo = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); this.salva(); return; }
       if (campo) return;
+      if (this.selTecla(e)) { e.preventDefault(); return; } // setas, Delete, Esc, Ctrl+C/V/D, F, + e − (editor-sel.js)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) this.volta(this.refaz, this.desfaz); else this.volta(this.desfaz, this.refaz); return; }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); this.volta(this.refaz, this.desfaz); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.code === 'Space') { this.espaco = true; e.preventDefault(); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') { this.escolhe('.'); return; }
+      if (e.key === 'm' || e.key === 'M' || e.key === 'Escape') { this.escolhe('mover'); return; }
       if (NOME_PECA[e.key] && e.key !== '.') this.escolhe(e.key); // a letra da peça (a mesma do mapa) escolhe a peça
     });
     window.addEventListener('keyup', (e) => { if (e.code === 'Space') this.espaco = false; });
@@ -565,6 +694,9 @@ const Ed = {
     liga('b-abrir', () => this.dialogoAbrir());
     liga('b-salvar', () => this.salva());
     liga('b-jogar', () => this.jogar(false));
+    liga('b-daqui', () => this.jogarDaqui());
+    liga('b-ajuda', () => this.ajuda());
+    document.querySelector('#dlg-ajuda .fecha').onclick = () => document.getElementById('dlg-ajuda').close();
     liga('b-desfaz', () => this.volta(this.desfaz, this.refaz));
     liga('b-refaz', () => this.volta(this.refaz, this.desfaz));
     liga('b-menos', () => this.zoom(1 / 1.25));
@@ -591,6 +723,15 @@ const Ed = {
       setTimeout(() => this.abreGerada(parseInt(document.getElementById('ger-n').value, 10) || 4, parseInt(document.getElementById('ger-s').value, 10) || 7), 30);
     };
     document.getElementById('b-baixar').onclick = () => this.baixa();
+    // Copiar JSON (01/10): no link do claude.ai baixar não funciona e salvar fica só neste navegador; copiado, o usuário
+    // cola na conversa. Sem permissão da área de transferência, o JSON vai para a caixa "Colar JSON", selecionado.
+    document.getElementById('b-copiar').onclick = () => {
+      const txt = formata(this.paraDef()), caixa = document.getElementById('colar');
+      const mostra = () => { caixa.value = txt; caixa.focus(); caixa.select(); this.msg('Não deu para copiar sozinho: o JSON está na caixa "Colar JSON", já selecionado — Ctrl+C.'); };
+      try {
+        navigator.clipboard.writeText(txt).then(() => { dlg.close(); this.msg(`JSON de "${this.f.nome}" copiado (${Math.round(txt.length / 1024)} KB): cole na conversa.`); }, mostra);
+      } catch (e) { mostra(); }
+    };
     document.getElementById('b-colar').onclick = () => {
       try { this.abreDef(JSON.parse(document.getElementById('colar').value)); dlg.close(); } catch (e) { dlg.close(); this.msg(`Não é um JSON de fase: ${e.message}`); }
     };
@@ -605,6 +746,83 @@ const Ed = {
     const q = this.f.canais.find((x) => x.c === b.c && x.l === b.l);
     if (COM_CANAL.includes(k)) { this.canal = q ? q.canal : null; this.marcaChips(); }
     this.escolhe(k);
+  },
+  // ------------------------------------------------------------------ Mover, estante e enfeites
+  retDe(a, b) {
+    const c0 = U.clamp(Math.min(a.c, b.c), 0, this.cols - 1), c1 = U.clamp(Math.max(a.c, b.c), 0, this.cols - 1);
+    const l0 = U.clamp(Math.min(a.l, b.l), 0, this.lins - 1), l1 = U.clamp(Math.max(a.l, b.l), 0, this.lins - 1);
+    return { c0, c1, l0, l1 };
+  },
+  // a peça no bloco (os blocos dela: o grupo inteiro na saída, portão, porta, escada) ou null (vazio e terreno)
+  pecaEm(c, l) {
+    const G = this.f.grade, k = G[l][c];
+    if (k === '.' || TERRENO.includes(k)) return null;
+    if (!GRUPO_INTEIRO.includes(k)) return [[c, l]];
+    const vistos = new Set([`${c},${l}`]), fila = [[c, l]], r = [];
+    while (fila.length) {
+      const [x, y] = fila.pop();
+      r.push([x, y]);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (this.dentro(nx, ny) && G[ny][nx] === k && !vistos.has(`${nx},${ny}`)) { vistos.add(`${nx},${ny}`); fila.push([nx, ny]); }
+      }
+    }
+    return r;
+  },
+  // o enfeite embaixo do ponto (o de cima primeiro), ou -1
+  decoEm(wx, wy) {
+    const L = this.f.decoracao || [];
+    for (let i = L.length - 1; i >= 0; i--) {
+      const d = L[i], img = Objetos.imgs[`decoracao/${d.p}`];
+      if (!img) continue;
+      const w = d.a * img.width / img.height, y1 = d.y + ((d.c || 'fundo') === 'fundo' ? DECO.afunda : 0);
+      if (wx >= d.x - w / 2 && wx <= d.x + w / 2 && wy >= y1 - d.a && wy <= y1) return i;
+    }
+    return -1;
+  },
+  // o chão embaixo do ponto (a linha de cima do primeiro bloco sólido), ou null
+  chaoEm(x, y) {
+    const c = Math.floor(x / TILE), G = this.f.grade, solido = (l) => '#CFb'.includes(G[l][c]);
+    if (c < 0 || c >= this.cols) return null;
+    let l = U.clamp(Math.floor(y / TILE), 0, this.lins - 1);
+    while (l > 0 && solido(l) && solido(l - 1)) l--; // (dentro do bloco: sobe até o topo dele)
+    for (; l < this.lins; l++) if (solido(l)) return l * TILE;
+    return null;
+  },
+  // enfeite novo: no chão embaixo do clique; fica selecionado (com o Selecionar) para ajustar
+  poeDeco(b, p) {
+    const E = ENFEITES[p], x = Math.round(b.wx / 5) * 5, chao = this.chaoEm(x, b.wy);
+    if (chao == null) { this.msg('Sem chão ali embaixo: o enfeite fica em pé num chão.'); return; }
+    this.foto();
+    this.f.decoracao = this.f.decoracao || [];
+    this.f.decoracao.push({ p, x, y: chao + (E.dy || 0), a: E.a, c: E.c || 'fundo' });
+    this.escolhe('mover');
+    this.sel = { tipo: 'deco', i: this.f.decoracao.length - 1 };
+    this.mudou();
+    this.msg('Enfeite posto (é só desenho, fica no fundo). Arraste para mudar de lugar; as alças dos cantos mudam o tamanho.');
+  },
+  // Estante: os blocos vazios do retângulo viram a parte cheia de livros; embaixo fica uma passagem de 4 blocos (se
+  // couber). Fica selecionada: as alças mudam o tamanho, o painel muda a passagem e põe o livro-portão
+  poeEstante(a, b) {
+    const r = this.retDe(a, b), f = this.f;
+    if (r.c1 - r.c0 < 1 || r.l1 - r.l0 < 1) { this.msg('Arraste um retângulo de pelo menos 2 × 2 blocos, do topo até o chão.'); return; }
+    this.foto();
+    f.estantes = (f.estantes || []).filter((e) => e.c1 < r.c0 || e.c0 > r.c1 || e.l1 < r.l0 || e.l0 > r.l1); // (tira a que encavala)
+    f.estantes.push(r);
+    const passa = r.l1 - r.l0 + 1 >= 6 ? 4 : 0;
+    for (let l = r.l0; l <= r.l1 - passa; l++) for (let c = r.c0; c <= r.c1; c++) if (f.grade[l][c] === '.') this._troca(c, l, '#');
+    this.escolhe('mover');
+    this.sel = { tipo: 'estante', i: f.estantes.length - 1 };
+    this.mudou();
+    this.msg('Estante posta. Arraste as alças para mudar o tamanho; no painel à direita: a passagem embaixo e o livro-portão.');
+  },
+  tiraEstante(c, l) {
+    const f = this.f, i = (f.estantes || []).findIndex((e) => c >= e.c0 && c <= e.c1 && l >= e.l0 && l <= e.l1);
+    if (i < 0) return;
+    this.foto();
+    const e = f.estantes.splice(i, 1)[0];
+    for (let y = e.l0; y <= e.l1; y++) for (let x = e.c0; x <= e.c1; x++) if (f.grade[y][x] === '#') this._troca(x, y, '.');
+    this.mudou();
   },
   poeSala(a, b) {
     const c0 = U.clamp(Math.min(a.c, b.c), 0, this.cols - 1), c1 = U.clamp(Math.max(a.c, b.c), 0, this.cols - 1);
@@ -635,6 +853,8 @@ const Ed = {
       for (const k of abre) if (!abertos.has(k)) av.push(`Botão/placa/alavanca sem portão (${nomeCanal(k)}).`);
       const chaves = new Set(n.chaves.map((k) => k.cor));
       for (const p of n.portas) if (!chaves.has(p.cor)) av.push(`Porta ${NOME_COR[p.cor]} sem chave da mesma cor.`);
+      // enfeite: chão embaixo dele inteiro (a regra do testaFases; senão o pé aparece pendurado num vão)
+      if (typeof confereDecoracao === 'function' && Objetos.ativo && Objetos.pronto()) for (const e of confereDecoracao(this.def)) av.push(`Enfeite ${e}.`);
     }
     const ul = document.getElementById('avisos');
     ul.innerHTML = av.length ? av.map((a) => `<li>${a}</li>`).join('') : '<li class="ok">Tudo no lugar.</li>';
@@ -676,6 +896,7 @@ const Ed = {
   jogar(robo) {
     if (this.faltaHeroi) { this.msg('Para jogar, a fase precisa dos três heróis (1, 2 e 3).'); return; }
     if (!guarda(CHAVE_JOGAR, JSON.stringify(this.paraDef()))) { this.msg('O navegador não deixou guardar a fase para o jogo (localStorage bloqueado).'); return; }
+    this.guardaRascunho(); // ("Voltar ao editor" abre o rascunho: tem que ser esta, mesmo sem mudança)
     // na mesma aba (aba nova é bloqueada no link do claude.ai e atrapalha no celular); o Esc de lá tem "Voltar ao
     // editor", e o editor volta com o rascunho
     location.href = `index.html?fase=~${robo ? '&demo' : ''}`;

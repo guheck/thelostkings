@@ -11,6 +11,7 @@
 //   x y z  chaves (vermelha, azul, amarela)       X Y Z  portas trancadas da mesma cor
 //   g  guarda   e  escudeiro   o  borracha   q  grampeador olhando para a esquerda   Q  para a direita
 //   j  lixeira (joga bolinha de papel; ponha no alto)   u  tesoureiro (corre sem frear e crava a tesoura na parede)
+//   a  blindado (soldadinho numa lata: nada derruba, só cair — em cima da trena, a fita recolhida)
 //   H  escada de palitos (↑ sobe, ↓ desce; o topo é piso). Com 1 bloco de largura (fresta), só o Fiapo cabe.
 //   k  poça de cola (no bloco vazio logo acima do chão): anda devagar e não pula; inimigo e bola do Pudim grudam
 //   w  poça de corretivo (idem): escorrega — quem entra embalado não freia nem vira até sair
@@ -20,6 +21,13 @@
 //   v  V  régua-gangorra (no bloco do calço, em cima do chão): v com a ponta esquerda embaixo, V com a direita
 //   c  carimbo (no bloco logo abaixo de um teto; desce até o chão embaixo): def.carimbos [{c, l, ritmo, fase}]
 //   n  post-it colado no fundo (a dobra da frente é um degrau na linha de baixo do bloco): pisou, treme, cai e volta
+//   b  livros deitados: sólido como o papelão; cada fileira de "b" é um livro (a capa de cima é o chão de quem pisa)
+//   K  ponto de controle (bandeirinha): o primeiro herói que encosta guarda a fase INTEIRA naquele instante (Jogo.ponto);
+//      quem perde os corações (ou aperta R) volta para lá, com alavancas, portões, cordas e inimigos como estavam
+//   R  trena (no bloco em cima do chão, na beira de um vão): a fita é a ponte; a bundada do Pudim no botão recolhe / estica
+//   E  estojo de zíper (no bloco em cima do chão, o meio dele): só o Marreta empurra; em cima é piso; pesa na placa
+//   I  i  pilar da frente (lápis / marca-texto; no bloco logo acima do chão): sobe até o primeiro teto, como se o
+//         segurasse; fica no plano da frente (os heróis passam por trás) e não é sólido
 const TILE = 40, COLS = 32, LINS = 18; // tamanho padrão (salas do tutorial)
 // Profundidade no tampo do chão (FAIXA_CHAO), em px acima da linha da frente. Os heróis pisam na frente (pé da frente na
 // linha, o de trás uns 8 px acima): é a pista. Portão e porta ficam em pé na pista (PROF.pista); a saída, um pouco atrás
@@ -32,9 +40,15 @@ const PROF = { pista: 6, saida: 16 };
 // pouco mais devagar que a câmera (DECO.paralaxe, só em x). Os livros de 3/4 saíram: pediam para pular em cima (vão
 // virar plataforma), e as peças pequenas (cola, post-its...) sumiam atrás do tampo.
 const DECO = { nevoa: 0.45, afunda: 24, paralaxe: 0.9, deriva: 64 }; // deriva: o máximo que a paralaxe desloca (640 x 0,1)
+// Pilar da frente (I/i, Nivel.desenhaFrente): em pé na beira da frente do tampo (o pé PILAR.pe px abaixo da linha do
+// chão: está na frente da pista; o lápis, cravado: Objetos.pilar); o topo encosta embaixo do teto. Escurecido (na
+// frente, fora da luz: como o lápis do estudo de arte). atras: a transparência com o herói ativo atrás dele.
+// encaixe: o topo entra na cara da frente do papelão de cima (o pilar aperta a laje; 01/10, estudo de variantes: em par,
+// nas duas pontas de uma prateleira solta, com o topo encaixado, ele parece segurar de verdade)
+const PILAR = { pe: 4, meiaLarg: 30, atras: 0.5, escuro: 0.28, encaixe: 14 };
 const CORES_CHAVE = { x: '#e0443a', y: '#3b7be0', z: '#f1bf3a' };
 const NOME_COR = { x: 'vermelha', y: 'azul', z: 'amarela' };
-const ESPECIES = { g: 'guarda', e: 'escudeiro', o: 'borracha', q: 'grampeador', Q: 'grampeador', j: 'lixeira', u: 'tesoureiro' };
+const ESPECIES = { g: 'guarda', e: 'escudeiro', o: 'borracha', q: 'grampeador', Q: 'grampeador', j: 'lixeira', u: 'tesoureiro', a: 'blindado' };
 const CANAL_PADRAO = { B: 'b', p: 'p', l: 'l', G: 'b', P: 'p', L: 'l' };
 const CORES_CANAL = ['#e2433a', '#3b7be0', '#3fb56a', '#9b6bd6', '#f08a24', '#1fa3b5'];
 
@@ -43,24 +57,135 @@ const CORES_CANAL = ['#e2433a', '#3b7be0', '#3fb56a', '#9b6bd6', '#f08a24', '#1f
 // derruba inimigo como boliche (a régua do escudeiro de frente segura). Para na cola, desliza no corretivo, dá para
 // subir nele (degrau) e, parado na placa, segura o portão.
 const DUREX = { r: 34, w: 62, empurra: 0.6, atrito: 300, soco: 560, gancho: { vx: 260, vy: -520 }, strike: 220, desce: 1000 };
+// Trena (R; 01/10, plano do esboço 3 da Mesa): a caixa da trena no chão, na beira de um vão; a fita é a ponte por cima
+// dele — as células do vão viram chão enquanto a fita passa por elas (herói, inimigo e a patrulha dele pisam como em
+// papelão). A BUNDADA DO PUDIM no botão (em cima da caixa: pisa-se de cima, como o post-it) recolhe a fita (TREC!) —
+// quem está nela cai — ou estica de novo (ZIIP!). Rápida como trena de verdade (usuário, 30/09: estica e recolhe "na
+// hora"). Esticando, não entra em quem está no vão: para antes dele. Caixa: o desenho a 0,36 (40 x 40, 1 bloco; trena
+// de verdade é pequena): o pulo do Pudim (46 px) passa por cima do botão do chão mesmo. Com 67 px pedia um degrau do lado
+// (01/10, usuário: o livro do lado da trena "ficou zoado"). O desafio vem do LUGAR: a caixa na beira de LÁ do vão, e o
+// inimigo da fita é o blindado (só cai) — o Pudim chega no botão por outro caminho (o duto, em bola).
+const TRENA = { w: 40, h: 40, estica: 1400, recolhe: 2200, escala: 0.36, fita: 16 }; // fita: a altura do desenho da fita (px)
+class Trena {
+  constructor(n, c, l) {
+    const lado = !n.parede(c - 1, l + 1) ? -1 : 1; // o vão: onde o chão acaba junto da caixa
+    const celulas = [];
+    for (let k = c + lado; k >= 0 && k < n.cols && n.grade[l + 1][k] === '.'; k += lado) celulas.push({ c: k, l: l + 1, fechado: true, tipo: 'fita' });
+    Object.assign(this, { x: c * TILE + TILE / 2, chao: (l + 1) * TILE, c, l, lado, celulas, L: celulas.length * TILE, esticada: true });
+    for (const q of celulas) n.dyn.set(q.l * n.cols + q.c, q);
+  }
+  get topo() { return this.chao - TRENA.h; }
+  // onde a fita começa (a beira do vão, junto da caixa)
+  get boca() { return this.lado < 0 ? this.c * TILE : (this.c + 1) * TILE; }
+  superficie(x) { return Math.abs(x - this.x) <= TRENA.w / 2 + 8 ? this.topo : null; } // (+8: o pé de quem está na beira)
+  em(M) { return M.herois.filter((h) => h.plat === this); }
+  pousa(h, v, M) {
+    if (h.id !== 'pudim' || h.estado !== 'bundada') return;
+    this.esticada = !this.esticada;
+    M.fx(this.esticada ? 'ZIIP!' : 'TREC!', this.x, this.topo - 34, '#ffd23f', 0.9);
+    M.tremer(4);
+    M.registra(`trena ${this.esticada ? 'estica' : 'recolhe'}`);
+  }
+  atualiza(dt, M) {
+    const n = M.nivel;
+    let alvo = this.esticada ? this.celulas.length * TILE : 0;
+    if (this.esticada) { // não estica para dentro de quem está no vão
+      const i = this.celulas.findIndex((q) => !q.fechado && n._ocupado({ c: q.c, c1: q.c + 1, l0: q.l, l1: q.l + 1 }, M.herois, M.inimigos));
+      if (i >= 0) alvo = Math.min(alvo, i * TILE);
+    }
+    const v = this.esticada ? TRENA.estica : TRENA.recolhe;
+    this.L += U.clamp(alvo - this.L, -v * dt, v * dt);
+    this.celulas.forEach((q, i) => {
+      const fecha = this.L >= (i + 1) * TILE - 2;
+      if (fecha !== q.fechado) { q.fechado = fecha; n.versao++; }
+    });
+  }
+}
+
+// Estojo de zíper (E; 01/10, plano do esboço 3 da Mesa): caixa pesada que SÓ O MARRETA empurra (a 45% da velocidade
+// dele, na pose de empurrar; os outros travam nele e fazem força). Não rola: para assim que ninguém empurra. Em cima é
+// piso (degrau); parado na placa, segura o portão. No caminho dele: empurra o inimigo da frente (para o fosso, se tiver
+// um), segura a estocada do lápis (TOC), a tesoura crava nele, grampo e bolinha param nele. Cai em buraco de 5 blocos e
+// o fecha (vira chão). Caixa pelo desenho (assets/mesa/estojo.png, 189 x 90, já no tamanho do jogo).
+// 01/10, usuário: "tem que ficar totalmente rente ao chão... as plataformas têm aquela faixa que fica para trás dos
+// pés dos heróis; o estojo, como é um objeto que você sobe em cima, também tem que ter isso": a linha de pisar é a
+// divisa da tampa (vista de cima, com o zíper) com a frente — a linha 25 do desenho —, a tampa fica ATRÁS dos pés com a
+// altura da faixa do papelão (tampa), e a frente tem 2 blocos (h): no fosso de 2 blocos ele fica rente ao chão. Largo
+// de 5 blocos, o tamanho do fosso (desenho de 200; a frente fica 16% mais alta que o desenho, numa caixa redonda nem
+// aparece; com 6, sem deformar, não cabia entre o fosso e a corda dos post-its na Mesa nova).
+const ESTOJO = { w: 198, h: 80, tampa: 28, desenho: 200, divisa: 25, empurra: 0.45, escorrega: 160 }; // escorrega: px/s, o meio já fora da beirada
+class Estojo {
+  constructor(x, y) { Object.assign(this, { x, y, vx: 0, vy: 0, noChao: true, eEstojo: true, travado: 0, cfg: { w: ESTOJO.w, h: ESTOJO.h } }); }
+  caixa() { return { x0: this.x - ESTOJO.w / 2, y0: this.y - ESTOJO.h, x1: this.x + ESTOJO.w / 2, y1: this.y }; }
+  atualiza(dt, M) {
+    const n = M.nivel, x0 = this.x;
+    // o meio já passou da beirada (apoiado só de um lado): escorrega sozinho para o buraco e cai (não fica pendurado)
+    // (empurrado para lá, vai no mais rápido dos dois)
+    if (this.noChao && !n.solidoEm(this.x, this.y + 2)) {
+      const e = n.solidoEm(this.x - ESTOJO.w / 2 + 6, this.y + 2), d = n.solidoEm(this.x + ESTOJO.w / 2 - 6, this.y + 2), s = e ? 1 : -1;
+      if (e !== d && s * this.vx >= 0) this.vx = s * Math.max(Math.abs(this.vx), ESTOJO.escorrega);
+    }
+    const vx0 = this.vx;
+    this.vy = Math.min(QUEDA_MAX, this.vy + GRAV * dt);
+    moveX(this, n, dt);
+    // quem está na frente (inimigo ou herói) vai junto (preso na parede, segura o estojo)
+    const s = Math.sign(this.x - x0);
+    if (s) {
+      const c = this.caixa();
+      for (const o of [...M.inimigos, ...M.herois]) {
+        if (o.vivo === false || o.y <= c.y0 + 4 || o.y - o.cfg.h >= c.y1 - 2 || Math.sign(o.x - this.x) !== s) continue;
+        const borda = s > 0 ? c.x1 + o.cfg.w / 2 : c.x0 - o.cfg.w / 2;
+        if (s * (borda - o.x) <= 0) continue;
+        const ox = o.x, ov = o.vx;
+        o.vx = (borda - o.x) / dt; moveX(o, n, dt); o.vx = ov;
+        if (Math.abs(o.x - borda) > 0.5) { this.x -= borda - o.x; if (Math.abs(this.x - x0) < 0.5) this.x = x0; }
+        if (o.x !== ox && !o.tEmpurradoEstojo) { o.tEmpurradoEstojo = M.t; M.registra(`estojo empurra ${o.especie || o.id}`); }
+      }
+    }
+    this.travado = vx0 && Math.abs(this.x - x0) < 0.01 ? Math.sign(vx0) : this.x !== x0 ? 0 : this.travado;
+    this.vx = 0; // não desliza: só anda enquanto empurram
+    const dx = this.x - x0;
+    if (dx) { this.anda = Math.sign(dx); this.tAndou = M.t; } // (o guarda vê o estojo vindo e estoca nele)
+    if (dx) { // quem está em cima vai junto (sem atravessar parede)
+      for (const o of [...M.herois, ...M.inimigos]) {
+        if (!o.noChao || Math.abs(o.y - this.topo()) > 1.5 || Math.abs(o.x - x0) >= (ESTOJO.w + o.cfg.w) / 2 - 8) continue;
+        const ov = o.vx; o.vx = dx / dt; moveX(o, n, dt); o.vx = ov;
+      }
+    }
+    const noChaoAntes = this.noChao, yAntes = this.y;
+    moveY(this, n, dt);
+    if (this.noChao && !noChaoAntes && this.y - yAntes >= 0 && this.vyAntes > 300) { M.tremer(6); M.fx('PUF!', this.x, this.y - 20, '#e8d6b4', 0.8); M.registra(`estojo caiu x=${Math.round(this.x)}`); }
+  }
+  // de pé em cima? (piso para heróis e inimigos)
+  topo() { return this.y - ESTOJO.h; }
+}
 // Régua-gangorra (30/09, esboço 3 da Mesa): régua de 384 px num calço de 46 px, girando na ponta dele (o desenho da IA,
 // assets/mesa/gangorra-nivel.png). Inclinada, a ponta de baixo encosta no chão e o tampo da de cima fica a 125 px.
 // Quem CAI na ponta de cima vira a régua (0,12 s) e lança quem está na outra: a altura vem da queda (v²/2g), do peso de
 // quem cai sobre o de quem voa, da bundada do Pudim e de quão na ponta está quem voa. O Fiapo, leve, vai mais alto.
 // Mais peso do lado de cima (andando para lá) vira devagar, sem lançar. Pisa-se só de cima, como a corda; a ponta de
 // baixo sobe como degrau.
-const GANGORRA = { L: 384, calco: 46, espessura: 32, ganho: 0.55, bundada: 1.5, max: 440, rapida: 0.12, lenta: 0.4, degrau: 44,
-  peso: { marreta: 2, fiapo: 1, pudim: 3 } };
+// Ajustes do usuário (30/09, "o Fiapo sobe verticalmente, não cai na plataforma"; "depois que você pula não consegue
+// mais resolver"; "se erra o timing, atravessa a gangorra"): quem voa sai em ARCO para fora (vx, para o lado da ponta
+// que o lança, e segue o arco sem comando: Heroi.lancado); sem ninguém em cima, a régua volta sozinha para a posição do
+// mapa (repouso) depois de um tempo; e quem cai numa ponta que está subindo pousa (superficieAntes).
+// Força (medida no confereGangorra): a bundada do Pudim do alto da escadinha de 4 livros lança o Fiapo a ~480 px, acima
+// do quicar na barriga (~344: o pé do Fiapo no alto do BOING!) — um lugar a 400 px só se alcança pela gangorra.
+// vx: o arco. Com a estante a 80 px da ponta (Mesa nova), 240 px/s chegava na quina 21 px abaixo do topo e batia na
+// parede; de ~80 a ~240 passa a quina e pousa em cima; 170 deixa folga dos dois lados (e ainda serve com bundada de 420).
+const GANGORRA = { L: 384, calco: 46, espessura: 32, ganho: 0.88, bundada: 1.5, max: 520, rapida: 0.12, lenta: 0.4, degrau: 44,
+  vx: 170, volta: 0.8, peso: { marreta: 2, fiapo: 1, pudim: 3 } };
 GANGORRA.ang = Math.asin(GANGORRA.calco / (GANGORRA.L / 2));
 class Gangorra {
-  constructor(x, chao, lado) { Object.assign(this, { x, chao, lado, ang: lado * GANGORRA.ang, vel: GANGORRA.lenta }); }
+  constructor(x, chao, lado) { Object.assign(this, { x, chao, lado, repouso: lado, ang: lado * GANGORRA.ang, angAntes: lado * GANGORRA.ang, vel: GANGORRA.lenta, vazia: 0 }); }
   get py() { return this.chao - GANGORRA.calco; } // o pivô: a ponta do calço (a régua gira em volta dele)
-  // altura do tampo da régua em x (null fora dela)
-  superficie(x) {
-    const d = x - this.x, c = Math.cos(this.ang);
+  // altura do tampo da régua em x (null fora dela), com a régua no ângulo a
+  superficie(x, a = this.ang) {
+    const d = x - this.x, c = Math.cos(a);
     if (Math.abs(d) > GANGORRA.L / 2 * c) return null;
-    return this.py + Math.tan(this.ang) * d - GANGORRA.espessura / c;
+    return this.py + Math.tan(a) * d - GANGORRA.espessura / c;
   }
+  superficieAntes(x) { return this.superficie(x, this.angAntes); }
   // ponta da régua (lado -1 esquerda, 1 direita): onde pisa quem fica bem na ponta
   ponta(lado) { return this.x + lado * (GANGORRA.L / 2 - 30) * Math.cos(this.ang); }
   em(M) { return M.herois.filter((h) => h.plat === this); }
@@ -76,16 +201,21 @@ class Gangorra {
       const braco = U.clamp(Math.abs(o.x - this.x) / (G.L / 2 * 0.7), 0.3, 1);
       const alt = Math.min(G.max, G.ganho * hQueda * G.peso[h.id] / G.peso[o.id] * forca * braco);
       o.vy = -Math.sqrt(2 * GRAV * alt); o.noChao = false; o.plat = null; o.apoio = null;
+      o.vx = -lado * G.vx; o.lancado = true; // em arco, para fora (o lado da ponta que o lança)
       if (o.estado === 'chao') o.muda('ar');
       M.registra(`gangorra lança ${o.id} ${alt.toFixed(0)} px`);
     }
   }
   atualiza(dt, M) {
-    const alvo = this.lado * GANGORRA.ang;
+    this.angAntes = this.ang;
+    const alvo = this.lado * GANGORRA.ang, quem = this.em(M);
+    this.vazia = quem.length ? 0 : this.vazia + dt;
     if (this.ang === alvo) { // parada: mais peso do lado de cima vira devagar (sem lançar)
       let torque = 0;
-      for (const h of this.em(M)) torque += GANGORRA.peso[h.id] * (h.x - this.x);
+      for (const h of quem) torque += GANGORRA.peso[h.id] * (h.x - this.x);
       if (torque && Math.sign(torque) !== this.lado) { this.lado = Math.sign(torque); this.vel = GANGORRA.lenta; }
+      // ninguém em cima faz um tempo: volta devagar para a posição do mapa (dá para lançar de novo)
+      else if (!torque && this.lado !== this.repouso && this.vazia >= GANGORRA.volta) { this.lado = this.repouso; this.vel = GANGORRA.lenta; }
     }
     const passo = 2 * GANGORRA.ang / this.vel * dt, a = this.lado * GANGORRA.ang;
     this.ang += U.clamp(a - this.ang, -passo, passo);
@@ -97,9 +227,19 @@ class Gangorra {
 // no corpo machuca; inimigo embaixo dele na descida é achatado. Com 6 blocos de vão, parado lá em cima o corpo fica a
 // 162 px do chão: todos passam por baixo no tempo certo. Ciclo, em fração do ritmo: parado em cima 46%, desce 6%
 // (acelerando), carimbando 17%, sobe 31%. Carimbou uma vez, fica a marca de tinta no chão.
-const CARIMBO = { w: 120, h: 70, folga: 8, ritmo: 2.6, fases: [0.46, 0.06, 0.17, 0.31] };
+// Ajuste do usuário (30/09): o corpo é sólido — do lado é parede, em cima é plataforma (dá para passar por cima enquanto
+// ele está embaixo) e só machuca quem fica ESPREMIDO: embaixo dele quando desce (Heroi._carimbos) ou em cima dele
+// contra o teto quando sobe (aqui). pega: quanto o herói tem que estar embaixo do corpo para ser espremido (menos que
+// isso, na quina, ele é empurrado para o lado).
+const CARIMBO = { w: 120, h: 70, folga: 8, ritmo: 2.6, fases: [0.46, 0.06, 0.17, 0.31], pega: 14 };
 class Carimbo {
-  constructor(x, teto, chao, ritmo, fase) { Object.assign(this, { x, teto, chao, ritmo, fase, t: 0, marcou: false, carimbou: false }); }
+  constructor(x, teto, chao, ritmo, fase) { Object.assign(this, { x, teto, chao, ritmo, fase, t: 0, tAntes: 0, marcou: false, carimbou: false }); }
+  // plataforma (pisa-se de cima, como a gangorra): o tampo do corpo
+  superficie(x, t = this.t) { return Math.abs(x - this.x) <= CARIMBO.w / 2 - 4 ? this.caixa(t).y0 : null; }
+  superficieAntes(x) { return this.superficie(x, this.tAntes); }
+  caixaAntes() { return this.caixa(this.tAntes); }
+  em(M) { return M.herois.filter((h) => h.plat === this); }
+  pousa() {}
   _u(t) { return ((t / this.ritmo + this.fase) % 1 + 1) % 1; }
   // quanto desceu no tempo t (0 = lá em cima, 1 = carimbando)
   descida(t) {
@@ -117,10 +257,13 @@ class Carimbo {
   }
   toca(x0, y0, x1, y1, t = this.t) { const k = this.caixa(t); return x1 > k.x0 + 6 && x0 < k.x1 - 6 && y1 > k.y0 + 4 && y0 < k.y1 - 2; }
   atualiza(dt, M) {
-    this.t = M.t;
+    this.tAntes = this.t; this.t = M.t;
     const d = this.descida(this.t);
     if (d >= 1 && !this.carimbou) { this.carimbou = this.marcou = true; M.fx('TUM!', this.x, this.chao - 30, '#e9c77a', 0.8); M.tremer(3); }
     if (d < 1) this.carimbou = false;
+    // em cima dele quando sobe: a cabeça bate no teto — espremido
+    const y0 = this.caixa().y0;
+    for (const h of this.em(M)) if (y0 - h.cfg.h < this.teto - 2) { M.registra(`${h.id} espremido no teto pelo carimbo`); h._espremido(M, this); }
     if (!this.descendo(this.t)) return;
     for (const o of M.inimigos) {
       if (!o.vivo) continue;
@@ -215,7 +358,9 @@ class Nivel {
     this.largura = this.cols * TILE;
     this.altura = this.lins * TILE;
     this.pinos = []; this.controles = []; this.portoes = []; this.portas = [];
-    this.chaves = []; this.rolos = []; this.inimigosDef = []; this.durex = []; this.gangorras = []; this.carimbos = []; this.postits = [];
+    this.chaves = []; this.rolos = []; this.pontos = []; this.inimigosDef = []; this.durex = []; this.gangorras = []; this.carimbos = []; this.postits = [];
+    this.pilares = []; this.estojos = []; this.trenas = [];
+    const trenas = []; // (montadas depois da grade: a fita olha o chão embaixo)
     this.spawns = {}; this.detritos = []; this.dyn = new Map(); this.versao = 0;
     this.corCanal = {};
     let sx0 = Infinity, sy0 = Infinity, sx1 = -Infinity, sy1 = -Infinity;
@@ -234,7 +379,15 @@ class Nivel {
           sy0 = Math.min(sy0, l * TILE); sy1 = Math.max(sy1, (l + 1) * TILE);
         } else if (CORES_CHAVE[t]) this.chaves.push({ cor: t, x, y: chao - 22, x0: x, y0: chao - 22, portador: null, usada: false });
         else if (t === 'r') this.rolos.push({ x, y: chao, pego: false });
+        else if (t === 'K') this.pontos.push({ x, y: chao, c, l, pego: false });
+        else if (t === 'I' || t === 'i') { // o teto: o primeiro bloco sólido acima (sem ele, passa do alto da fase)
+          let l2 = l - 1;
+          while (l2 >= 0 && !['#', 'C', 'F', 'b'].includes(this.grade[l2][c])) l2--;
+          this.pilares.push({ x, c, l, chao, teto: l2 >= 0 ? (l2 + 1) * TILE : -240, p: t === 'I' ? 'lapis-frente' : 'marcatexto-frente' });
+        }
         else if (t === 'd') this.durex.push(new Durex(x, chao));
+        else if (t === 'E') this.estojos.push(new Estojo(x, chao));
+        else if (t === 'R') trenas.push([c, l]);
         // (em pé na pista, como o portão: o calço e a ponta de baixo ficam PROF.pista acima da linha da frente)
         else if (t === 'v' || t === 'V') this.gangorras.push(new Gangorra(x, chao - (this.parede(c, l + 1) ? PROF.pista : 0), t === 'v' ? -1 : 1));
         else if (t === 'n') this.postits.push(new Postit(x, chao));
@@ -251,6 +404,7 @@ class Nivel {
       }
     }
     this.saida = { x0: sx0, y0: sy0, x1: sx1, y1: sy1 };
+    this.trenas = trenas.map(([c, l]) => new Trena(this, c, l));
     // portões e portas: grupos de blocos iguais; ficam na grade, mas a solidez vem do estado do objeto
     for (const tipo of ['G', 'P', 'L']) {
       for (const g of this._grupos(tipo)) {
@@ -271,9 +425,24 @@ class Nivel {
     // cor de cada canal (portão e quem abre ficam da mesma cor)
     const canais = [...new Set([...this.controles.map((k) => k.canal), ...this.portoes.map((g) => g.canal)])];
     canais.forEach((k, i) => { this.corCanal[k] = { b: CORES_CANAL[0], p: CORES_CANAL[1], l: CORES_CANAL[2] }[k] || CORES_CANAL[(i + 3) % CORES_CANAL.length]; });
+    Object.assign(this.corCanal, def.coresCanal || {}); // a fase pode fixar a cor de um canal (o livro-portão amarelo)
     for (const g of [...this.portoes, ...this.portas]) {
       g.c = Math.min(...g.tiles.map((q) => q[0])); g.c1 = Math.max(...g.tiles.map((q) => q[0])) + 1;
       g.l0 = Math.min(...g.tiles.map((q) => q[1])); g.l1 = Math.max(...g.tiles.map((q) => q[1])) + 1;
+    }
+    // Estantes de livros (def.estantes [{c0, c1, l0, l1}], do topo até o chão; 30/09, usuário: o portão ali "deveria
+    // ser a estante de livros"): a parte de blocos sólidos é a estante cheia de livros (o topo se pisa), embaixo dela
+    // passa a pista, e o portão dentro dela é o LIVRO-PORTÃO — o livro puxado para a pista, que a alavanca empurra para
+    // dentro. cheio = até onde vão os blocos sólidos (a tábua de baixo, em cima da pista).
+    this.estantes = (def.estantes || []).map((e) => {
+      let l = e.l0;
+      while (l <= e.l1 && [...Array(e.c1 - e.c0 + 1)].every((_, i) => this.grade[l][e.c0 + i] === '#')) l++;
+      return Object.assign({ x0: e.c0 * TILE, x1: (e.c1 + 1) * TILE, y0: e.l0 * TILE, y1: (e.l1 + 1) * TILE, cheio: l * TILE }, e);
+    });
+    for (const g of this.portoes) {
+      const e = this.estantes.find((q) => g.c >= q.c0 && g.c1 - 1 <= q.c1 && g.l0 >= q.l0 && g.l1 - 1 <= q.l1);
+      g.livro = !!e;
+      if (e) e.portaX = Math.min(e.portaX ?? Infinity, g.c * TILE); // (os livros do fundo da pista ficam longe dele)
     }
     // escadas: cada grupo de "H" vira uma escada (x = meio, w = largura, do topo até o chão de baixo)
     this.escadas = this._grupos('H').map((g) => {
@@ -282,6 +451,8 @@ class Nivel {
       return { c0, c1, x: (c0 + c1 + 1) * TILE / 2, w: (c1 - c0 + 1) * TILE, yTopo: l0 * TILE, yBase: (l1 + 1) * TILE };
     });
     this.salas = def.salas || [];
+    // cor de cada bloco de livro deitado (def.livros [[c, l, cor]], do editor); sem cor, sorteada pela posição
+    this.corLivro = new Map((def.livros || []).map(([c, l, cor]) => [l * this.cols + c, cor]));
     this._ret0 = this._retangulos();
   }
 
@@ -309,20 +480,20 @@ class Nivel {
   }
   solido(c, l) {
     const t = this.tile(c, l);
-    if (t === '#' || t === 'C' || t === 'F') return true;
+    if (t === '#' || t === 'C' || t === 'F' || t === 'b') return true;
     if (c < 0 || c >= this.cols || l < 0 || l >= this.lins) return false;
     const o = this.dyn.get(l * this.cols + c);
     return !!(o && o.fechado);
   }
   // parede fixa (bloco, parede fraca, papel): portão e porta não contam — a faixa do chão passa por baixo deles
-  parede(c, l) { const t = this.tile(c, l); return t === '#' || t === 'C' || t === 'F'; }
+  parede(c, l) { const t = this.tile(c, l); return t === '#' || t === 'C' || t === 'F' || t === 'b'; }
   solidoEm(x, y) {
     const c = Math.floor(x / TILE), l = Math.floor(y / TILE);
     if (this.rampa(c, l)) return y >= this.chaoRampa(c, l, x); // rampa: só a parte cheia, embaixo da inclinação
     return this.solido(c, l);
   }
   // o que se pisa só de cima e se mexe (gangorra, post-it): superficie(x), pousa(h, v, M)
-  plataformas() { return this._plats || (this._plats = [...this.gangorras, ...this.postits]); }
+  plataformas() { return this._plats || (this._plats = [...this.gangorras, ...this.postits, ...this.carimbos, ...this.trenas]); }
   // embaixo de um carimbo (em qualquer altura dele): não é lugar seguro para reaparecer
   sobCarimbo(x0, x1, y) { return this.carimbos.some((k) => x1 > k.x - CARIMBO.w / 2 && x0 < k.x + CARIMBO.w / 2 && y > k.teto && y <= k.chao + 8); }
   // Rampa de 45°: 1 = '/' (sobe para a direita), -1 = '\' (sobe para a esquerda), 0 = não é rampa
@@ -439,7 +610,8 @@ class Nivel {
       } else if (k.tipo === 'placa') {
         const antes = k.ativo;
         // o rolo de durex é largo: vale qualquer parte dele em cima da placa
-        const rolo = this.durex.some((o) => o.noChao && Math.abs(o.x - k.x) < DUREX.w / 2 + 4 && Math.abs(o.y - k.y) < 5);
+        const rolo = this.durex.some((o) => o.noChao && Math.abs(o.x - k.x) < DUREX.w / 2 + 4 && Math.abs(o.y - k.y) < 5)
+          || this.estojos.some((o) => o.noChao && Math.abs(o.x - k.x) < ESTOJO.w / 2 + 4 && Math.abs(o.y - k.y) < 5); // (o estojo também)
         k.ativo = herois.some((h) => pisa(k, h)) || inimigos.some((o) => o.vivo && pisa(k, o)) || rolo;
         if (k.ativo && !antes) M.fx('clic', k.x, k.y - 30, '#fffdf6', 0.7);
       } else { // alavanca: ligada, fica inclinada para o lado de quem puxou; desligada, em pé (vai girando, não pula)
@@ -526,6 +698,39 @@ class Nivel {
       if (dentro(x, y, x + w, y + h)) Cenario.plataforma(g, x, y, w, h);
     }
     this._faixas(g, c0, c1, dentro);
+    // chão de baixo das fases da Mesa (def.chaoMesa): o tampo de madeira da mesa por cima do papelão e da faixa
+    if (this.def.chaoMesa && comObjetos()) {
+      for (const r of this._ret0) {
+        if (r.l1 < this.lins || r.c0 > 0 || r.c1 < this.cols) continue;
+        const y = r.l0 * TILE;
+        if (dentro(0, y - 40, this.largura, this.altura)) Objetos.tampo(g, 0, this.largura, y, this.altura + 30);
+      }
+    }
+    // livros deitados: um por fileira de "b" da mesma cor, de baixo para cima (o de cima cobre a capa do de baixo; a
+    // capa do último é o chão). Cor escolhida no editor (sem ela, sorteada); comprimento um pouco diferente e
+    // desalinhado de leve (não passa de parede nem entra no livro do lado)
+    const corEm = (c, l) => { // a escolhida, ou a da fileira inteira de "b" (sorteada pela ponta dela)
+      const k = this.corLivro.get(l * this.cols + c);
+      if (k != null) return k;
+      let a = c;
+      while (a > 0 && this.grade[l][a - 1] === 'b') a--;
+      return Math.floor(U.hash(a * 3 + l * 17) * 4);
+    };
+    for (let l = this.lins - 1; l >= 0; l--) for (let c = c0; c <= c1; c++) {
+      if (this.grade[l][c] !== 'b') continue;
+      const cor = corEm(c, l);
+      if (c > c0 && this.grade[l][c - 1] === 'b' && corEm(c - 1, l) === cor) continue;
+      let a = c, b = c;
+      while (a > 0 && this.grade[l][a - 1] === 'b' && corEm(a - 1, l) === cor) a--;
+      while (b + 1 < this.cols && this.grade[l][b + 1] === 'b' && corEm(b + 1, l) === cor) b++;
+      const r = U.hash(a * 13 + l * 7), s = U.hash(b * 5 + l * 11), solto = (cc) => !this.parede(cc, l);
+      const x0 = a * TILE - (solto(a - 1) ? 2 + r * 6 : 0), x1 = (b + 1) * TILE + (solto(b + 1) ? 2 + s * 6 : 0);
+      if (!dentro(x0, l * TILE - 30, x1, (l + 1) * TILE)) continue;
+      if (!(comObjetos() && Objetos.livroDeitado(g, x0, x1, (l + 1) * TILE, cor))) Nivel.desenhaLivroDeitado(g, x0, x1, (l + 1) * TILE, cor);
+    }
+    for (const e of this.estantes) { // por cima dos blocos dela (que são a parte cheia de livros)
+      if (dentro(e.x0 - 20, e.y0 - 40, e.x1 + 20, e.y1) && !(comObjetos() && Objetos.estante(g, e))) Nivel.desenhaEstante(g, e);
+    }
 
     // poças de cola e de corretivo: uma por fileira de blocos iguais, deitada no chão (desenhada no primeiro bloco dela)
     for (let l = 0; l < this.lins; l++) for (let c = c0; c <= c1; c++) {
@@ -547,6 +752,37 @@ class Nivel {
     for (const p of this.pinos) if (dentro(p.x - 20, p.y - 40, p.x + 20, p.y)) Cenario.tachinha(g, p.x, p.y);
     for (const L of this.escadas) if (dentro(L.x - L.w / 2, L.yTopo - 40, L.x + L.w / 2, L.yBase)) Nivel.desenhaEscada(g, L);
     this._decoracao(g, 'frente', dentro);
+  }
+
+  // Estojos de zíper: depois dos inimigos (a ponta do lápis que bate nele fica atrás da face) e antes dos heróis
+  desenhaEstojos(ctx, v) {
+    for (const e of this.estojos) {
+      if (e.x + 100 < v.x0 || e.x - 100 > v.x1 || e.y < v.y0 || e.y - 100 > v.y1) continue;
+      if (!(comObjetos() && Objetos.estojo(ctx, e))) Nivel.desenhaEstojo(ctx, e);
+    }
+  }
+  // (x, y) dentro de um estojo de zíper? (grampo e bolinha param nele)
+  noEstojo(x, y) { return this.estojos.some((e) => { const k = e.caixa(); return x > k.x0 && x < k.x1 && y > k.y0 && y < k.y1; }); }
+
+  // Plano da frente do mapa, depois dos heróis: os pilares (I/i; 01/10, usuário: "um pilar... cravado no chão, indo
+  // até o teto... você passa por trás desse pilar mas você atravessa ele"). Com o herói ativo atrás, meio transparente
+  // (quem você controla nunca some).
+  desenhaFrente(g, v, ativo) {
+    for (const P of this.pilares) {
+      if (P.x + 50 < v.x0 || P.x - 50 > v.x1 || P.chao + 30 < v.y0 || P.teto > v.y1) continue;
+      const atras = !!ativo && Math.abs(ativo.x - P.x) < ativo.cfg.w / 2 + PILAR.meiaLarg && ativo.y > P.teto && ativo.y - ativo.cfg.h < P.chao;
+      const a = atras ? PILAR.atras : 1;
+      if (!(comObjetos() && Objetos.pilar(g, P, a))) Nivel.desenhaPilar(g, P, a);
+    }
+  }
+  // (sem a arte da IA) pilar marrom-escuro com a ponta de lápis ou a tampa
+  static desenhaPilar(g, P, a) {
+    const w = PILAR.meiaLarg * 2, x0 = P.x - w / 2, y1 = P.chao + PILAR.pe, lapis = P.p === 'lapis-frente', y0 = P.teto + (lapis ? 40 : 0);
+    g.save(); g.globalAlpha = a;
+    if (lapis) Estilo.forma(g, (c) => { c.beginPath(); c.moveTo(x0, y0); c.lineTo(P.x, P.teto); c.lineTo(x0 + w, y0); c.closePath(); }, { cor: '#8a7356' }, { elev: 0, linha: 3, cel: false });
+    Estilo.forma(g, (c) => U.retRed(c, x0, y0, w, y1 - y0, 4), { cor: lapis ? '#7d6a33' : '#8f8f86' }, { elev: 0, linha: 3, cel: false });
+    if (!lapis) Estilo.forma(g, (c) => U.retRed(c, x0 - 3, P.teto, w + 6, 70, 8), { cor: '#2f6b3a' }, { elev: 0, linha: 3, cel: false });
+    g.restore();
   }
 
   // Decoração da fase (def.decoracao, posta à mão: tools/piloto_mesa.py): peças da IA sem física.
@@ -684,6 +920,7 @@ class Nivel {
   desenhaVivo(ctx, t, naSaida, v) {
     const dentro = (x0, y0, x1, y1) => x1 >= v.x0 - 60 && x0 <= v.x1 + 60 && y1 >= v.y0 - 100 && y0 <= v.y1 + 60;
     const todosDentro = naSaida.every(Boolean);
+    for (const p of this.pontos) if (dentro(p.x - 30, p.y - 110, p.x + 60, p.y)) Nivel.desenhaPonto(ctx, p, t);
     // saída: portinha de castelo, com o tapete da chegada na frente e uma coroinha acesa para cada um que chegou
     const s = this.saida;
     if (s.x1 > s.x0 && dentro(s.x0 - TILE, s.y0 - 40, s.x1 + TILE, s.y1)) {
@@ -744,9 +981,13 @@ class Nivel {
     // portões (régua da cor do canal que sobe) e portas trancadas (afundam no chão)
     for (const g of this.portoes) {
       const x0 = g.c * TILE, y0 = g.l0 * TILE, h = (g.l1 - g.l0) * TILE;
-      if (g.abertura > 0.985 || !dentro(x0, y0, x0 + TILE, y0 + h)) continue;
       // apoiado num chão, fica em pé na pista (PROF.pista acima da linha da frente, com a faixa passando por trás)
       const pe = this.parede(g.c, g.l1) ? PROF.pista : 0;
+      if (g.livro) { // livro-portão: aberto, continua lá, empurrado para dentro da estante (na sombra dela)
+        if (dentro(x0, y0, x0 + TILE, y0 + h) && !(comObjetos() && Objetos.livroPortao(ctx, g, this.corCanal[g.canal]))) Nivel.desenhaLivroPortao(ctx, g, this.corCanal[g.canal], pe);
+        continue;
+      }
+      if (g.abertura > 0.985 || !dentro(x0, y0, x0 + TILE, y0 + h)) continue;
       const sobe = U.ease.inOut(g.abertura) * h, cor = this.corCanal[g.canal] || '#e9c77a';
       const x = x0 + 8, y = y0 - sobe - pe, w = TILE - 16;
       ctx.save();
@@ -807,6 +1048,8 @@ class Nivel {
     for (const r of this.durex) {
       if (dentro(r.x - 50, r.y - 80, r.x + 50, r.y) && !(comObjetos() && Objetos.durex && Objetos.durex(ctx, r))) Nivel.desenhaDurex(ctx, r);
     }
+    for (const r of this.trenas) if (dentro(r.x - r.L - 60, r.topo - 20, r.x + r.L + 60, r.chao + 40) && !(comObjetos() && Objetos.trena(ctx, r))) Nivel.desenhaTrena(ctx, r);
+    // (o estojo de zíper vai depois dos inimigos: desenhaEstojos — a estocada do lápis bate na face dele, não atravessa)
     // papelão rachado e folha de papel
     const c0 = Math.max(0, Math.floor(v.x0 / TILE) - 1), c1 = Math.min(this.cols - 1, Math.ceil(v.x1 / TILE) + 1);
     for (let l = 0; l < this.lins; l++) for (let c = c0; c <= c1; c++) {
@@ -854,6 +1097,46 @@ class Nivel {
     ctx.restore();
   }
 
+  // Estante (desenho por código, reserva do desenho da IA): moldura de madeira, a tábua em cima da pista e o fundo escuro
+  static desenhaEstante(ctx, e) {
+    ctx.fillStyle = '#5a3a22'; ctx.fillRect(e.x0, e.y0, e.x1 - e.x0, e.y1 - e.y0);
+    for (const [x, y, w, h] of [[e.x0 - 4, e.y0 - 10, e.x1 - e.x0 + 8, 20], [e.x0, e.cheio - 12, e.x1 - e.x0, 14], [e.x0, e.y0, 14, e.y1 - e.y0], [e.x1 - 14, e.y0, 14, e.y1 - e.y0]]) {
+      Estilo.forma(ctx, (c) => U.retRed(c, x, y, w, h, 3), { cor: '#b0703c' }, { elev: 1, linha: 2.5, cel: false });
+    }
+  }
+  // Ponto de controle (desenho por código): bandeirinha num palito fincado na pista, balançando; ainda não pego: branca
+  // com um "?"; pego: verde, com um visto
+  static desenhaPonto(ctx, p, t) {
+    const y0 = p.y - PROF.pista, alto = 96, x = p.x - 14, onda = Math.sin(t * 4 + p.x * 0.01) * 4;
+    Estilo.forma(ctx, (c) => U.retRed(c, x - 3, y0 - alto, 6, alto + 2, 3), { cor: '#d9b07a' }, { elev: 1, linha: 2.2 });
+    Estilo.forma(ctx, (c) => U.circulo(c, x, y0 - alto - 3, 6), { cor: '#f2c230' }, { elev: 1, linha: 2.2 });
+    const cor = p.pego ? '#3fb56a' : '#fbf7ec';
+    Estilo.forma(ctx, (c) => {
+      c.beginPath(); c.moveTo(x + 3, y0 - alto + 2);
+      c.quadraticCurveTo(x + 24, y0 - alto + 6 + onda, x + 46, y0 - alto + 16 + onda);
+      c.quadraticCurveTo(x + 24, y0 - alto + 24 - onda, x + 3, y0 - alto + 32); c.closePath();
+    }, { cor }, { elev: 1.5, linha: 2.5 });
+    ctx.save();
+    ctx.strokeStyle = p.pego ? '#fbf7ec' : '#2b1f2e'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    if (p.pego) { ctx.moveTo(x + 12, y0 - alto + 17); ctx.lineTo(x + 18, y0 - alto + 23); ctx.lineTo(x + 28, y0 - alto + 11); }
+    else { ctx.font = `bold 18px ${FONTE_TITULO}`; ctx.fillStyle = '#2b1f2e'; ctx.textAlign = 'center'; ctx.fillText('?', x + 19, y0 - alto + 24 + onda * 0.3); }
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Livro deitado (desenho por código): a lombada de frente (o bloco) e a capa por cima, vista do alto
+  static desenhaLivroDeitado(g, x0, x1, y, cor) {
+    const C = [['#d0463c', '#e8665a'], ['#3b6fc4', '#5b8fe0'], ['#3f9a5a', '#5cb877'], ['#8a55c2', '#a879dc']][cor % 4];
+    Estilo.forma(g, (c) => U.retRed(c, x0, y - TILE - 18, x1 - x0, 22, 5), { cor: C[1] }, { elev: 0.5, linha: 2.5, cel: false });
+    Estilo.forma(g, (c) => U.retRed(c, x0, y - TILE, x1 - x0, TILE, 5), { cor: C[0] }, { elev: 1, linha: 2.5 });
+  }
+  // Livro-portão (desenho por código): o livro em pé no vão de baixo da estante (cabe nele: até embaixo da tábua, que
+  // vai até cheio + 2); aberto, vai para o fundo e escurece
+  static desenhaLivroPortao(ctx, g, cor, pe) {
+    const k = U.ease.inOut(g.abertura), yb = g.l1 * TILE - pe * k, h = g.l1 * TILE - pe - (g.l0 * TILE + 2) - 4;
+    Estilo.forma(ctx, (c) => U.retRed(c, g.c * TILE + 1, yb - h, TILE - 2, h, 4), { cor: U.mistura(cor || '#f1bf3a', '#3a2616', 0.34 * k) }, { elev: 1.5, linha: 3 });
+  }
+
   // Carimbo (desenho por código): a haste do teto até o corpo de madeira, a borracha vermelha embaixo e a marca no chão
   static desenhaCarimbo(ctx, k) {
     const b = k.caixa(), W = CARIMBO.w;
@@ -875,6 +1158,20 @@ class Nivel {
     ctx.restore();
   }
 
+  // Trena (desenho por código): a fita amarela do vão até onde ela vai, a caixa com o botão
+  static desenhaTrena(ctx, r) {
+    const b = r.boca, x1 = b + r.lado * r.L;
+    if (r.L > 2) Estilo.forma(ctx, (q) => q.rect(Math.min(b, x1), r.chao - 6, Math.abs(x1 - b), 14), { cor: '#f2c230' }, { elev: 0.5, linha: 2.5, cel: false });
+    Estilo.forma(ctx, (q) => U.retRed(q, r.x - TRENA.w / 2, r.topo + 8, TRENA.w, TRENA.h - 8, 18), { cor: '#d8463c' }, { elev: 1.5, linha: 3 });
+    Estilo.forma(ctx, (q) => U.retRed(q, r.x - 12, r.topo, 24, 12, 4), { cor: '#3a3a44' }, { elev: 0.5, linha: 2, cel: false });
+  }
+  // Estojo de zíper (desenho por código): caixa de pano com o zíper em cima
+  static desenhaEstojo(ctx, e) {
+    const c = e.caixa();
+    Estilo.forma(ctx, (q) => U.retRed(q, c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0, 22), { cor: '#4f7fc4' }, { elev: 1.5, linha: 3 });
+    Estilo.traco(ctx, (q) => { q.beginPath(); q.moveTo(c.x0 + 18, c.y0 + 14); q.lineTo(c.x1 - 18, c.y0 + 14); }, '#d8dde4', 4, { elev: 0 });
+    Estilo.forma(ctx, (q) => U.retRed(q, c.x1 - 34, c.y0 + 8, 14, 22, 4), { cor: '#d8dde4' }, { elev: 0.5, linha: 2, cel: false });
+  }
   // Rolo de durex (desenho por código): anel de fita com o miolo de papelão e a ponta solta, girando
   static desenhaDurex(ctx, r) {
     const R = DUREX.r;

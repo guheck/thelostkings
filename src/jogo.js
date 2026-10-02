@@ -10,6 +10,12 @@ const TECLAS = {
   Digit1: 's1', Digit2: 's2', Digit3: 's3', Numpad1: 's1', Numpad2: 's2', Numpad3: 's3',
 };
 
+// Nuvens do plano da frente (Jogo._nuvens): s = escala do desenho (a grande, nuvem1 de 255 px, sai com ~300 px; a média,
+// nuvem2, ~210: no máximo 1,2x o tamanho da imagem, senão borra). Caixa em blocos a partir do meio: meiaLarg para cada
+// lado (a nuvem tem ~4; o resto é a folga da paralaxe, até 77 px na beira da tela), cima/baixo; vao = blocos livres
+// embaixo dela; passo = um trecho de fase por nuvem; andar = distância na vertical entre duas do mesmo trecho.
+const NUVEM = { grande: 2.4, media: 2.1, meiaLarg: 6, cima: 2, baixo: 2, vao: 5, passo: 1100, andar: 640, topo: 200 };
+
 // Coração do HUD (cheio = vida que ainda tem)
 function desenhaCoracao(ctx, x, y, r, cheio) {
   Estilo.forma(ctx, (c) => {
@@ -28,7 +34,7 @@ class Mundo {
     this.nivel = new Nivel(def);
     this.cordas = new Cordas(this.nivel, def.cordas ?? 1);
     this.cordas.rapido = !!opts.rapido;
-    this.herois = ORDEM.map((id) => { const s = this.nivel.spawns[id]; return new Heroi(id, s.x, s.y); });
+    this.herois = ORDEM.map((id) => { const s = this.nivel.spawns[id]; return new Heroi(id, s.x, s.y).encaixa(this.nivel); });
     this.cordas.herois = this.herois;
     this.inimigos = [...this.nivel.inimigosDef, ...(def.inimigos || [])].map((d) => new Inimigo(d));
     this.grampos = []; this.bolinhas = [];
@@ -87,6 +93,8 @@ class Mundo {
     for (const k of this.nivel.carimbos) k.atualiza(dt, this); // (antes dos inimigos: achatado na descida é PLAFT!)
     for (const o of this.inimigos) o.atualiza(dt, this);
     for (const r of this.nivel.durex) r.atualiza(dt, this);
+    for (const e of this.nivel.estojos) e.atualiza(dt, this);
+    for (const r of this.nivel.trenas) r.atualiza(dt, this);
     for (const g of this.nivel.gangorras) g.atualiza(dt, this);
     for (const p of this.nivel.postits) p.atualiza(dt, this);
     this._grampos(dt);
@@ -102,6 +110,7 @@ class Mundo {
     this.nivel.atualizaCanais(dt, this.herois, this.inimigos, this);
     this._chaves();
     this._rolos();
+    this._pontos();
     this.nivel.atualiza(dt);
     this._saida();
     if (this.efeitos.length) this.efeitos = this.efeitos.filter((e) => this.t - e.t0 < e.dur);
@@ -114,35 +123,53 @@ class Mundo {
       if (!o.vivo) continue;
       const ox0 = o.x - o.cfg.w / 2 + 4, ox1 = o.x + o.cfg.w / 2 - 4, oy0 = o.y - o.cfg.h + 4, oy1 = o.y;
       for (const h of this.herois) {
-        if (h.estado === 'machucado' || h.estado === 'caido' || h.pisca > 0) continue;
+        if (h.estado === 'machucado' || h.estado === 'caido') continue;
         const b = h.caixa();
         if (b.x1 < ox0 || b.x0 > ox1 || b.y1 < oy0 || b.y0 > oy1) continue;
+        // o blindado (a lata) é parede que anda: encostar empurra (não machuca) e ninguém atravessa — nem piscando, logo
+        // depois de um dano (01/10: o Fiapo levava 1 coração no blindado e passava por ele piscando; a trena perdia a razão)
+        if (o.cfg.blindado && h.estado !== 'arremessado') {
+          const sai = Math.sign(h.x - o.x) || -o.f;
+          if (Math.sign(h.vx) !== sai) o.clang(this);
+          h.vx = sai * (h.estado === 'rolando' ? 240 : 420); h.empurrado = 0.3; o.tEmpurrou = this.t;
+          continue;
+        }
+        if (h.pisca > 0) continue;
         if (h.estado === 'arremessado') {
           if (h.id !== 'pudim') { if (o.especie !== 'grampeador') h._machuca(this); } // o Fiapo é leve: quem apanha é ele
           else if (o.escudoPara(h.x)) { h.vx = -h.vx * 0.3; this.fx('TOC!', o.x, o.y - 70, '#e9c77a'); o.tBloqueio = this.t; }
+          else if (o.cfg.blindado) { o.clang(this); h.vx = -h.vx * 0.3; } // (a lata)
           else if (o.especie !== 'grampeador') { o.derrota(Math.sign(h.vx) * 380, this, 'PAF!'); h.vx *= 0.3; }
           continue;
         }
-        // boliche: a bola do Pudim só derruba quem está desarmado — o guarda com o lápis quebrado (tonto), o tesoureiro
-        // preso ou tonto, o escudeiro pelas costas. A borracha (de borracha) devolve a bola; lápis armado, tesoura, régua
-        // de frente e grampeador (metal) seguram (29/09: com a bola resolvendo tudo, os inimigos ficavam fáceis demais)
+        // boliche (01/10, equilíbrio — usuário: "o Pudim tá muito forte... sai rolando, invulnerável, mata todos"): a bola
+        // não derruba mais ninguém. Quem está desarmado (o guarda com o lápis quebrado, o tesoureiro preso, quem é pego
+        // pelas costas, a lixeira, quem já está zonzo) leva um empurrão e fica zonzo; quem derruba é o Marreta. De frente,
+        // a ponta fura a bola: o lápis do guarda e a tesoura machucam o Pudim (escudo ele é em pé, com a barriga). Régua
+        // de frente e grampeador (metal) seguram; a borracha devolve.
         if (h.estado === 'rolando') {
-          const desarmado = (o.especie === 'guarda' && o.tonto > 0) || (o.especie === 'tesoureiro' && o.preso > 0)
-            || (o.especie === 'escudeiro' && !o.escudoPara(h.x)) || o.especie === 'lixeira';
-          if (!desarmado) {
-            const volta = -(Math.sign(o.x - h.x) || 1), borracha = o.especie === 'borracha';
-            if (Math.sign(h.vx) !== volta) { // uma batida só
-              this.fx(borracha ? 'BOING' : 'TOC!', (h.x + o.x) / 2, o.y - 50, borracha ? '#f28aa0' : '#e9c77a', 0.9);
-              o.tBloqueio = this.t; if (borracha) o.tQuica = this.t;
-            }
-            h.vx = volta * (borracha ? 420 : 240);
-          } else o.derrota((Math.sign(h.vx) || Math.sign(o.x - h.x) || 1) * 440, this, 'STRIKE!');
+          const esp = o.especie, volta = -(Math.sign(o.x - h.x) || 1), costas = Math.sign(h.x - o.x) !== o.f;
+          const desarmado = (esp === 'guarda' && (o.tonto > 0 || costas)) || (esp === 'tesoureiro' && (o.preso > 0 || costas))
+            || (esp === 'escudeiro' && !o.escudoPara(h.x)) || esp === 'lixeira' || o.zonzo > 0;
+          if (!desarmado && (esp === 'guarda' || esp === 'tesoureiro')) {
+            this.fx(esp === 'guarda' ? 'TUC!' : 'TSC!', (h.x + o.x) / 2, o.y - 50, '#e9e9f0', 0.9);
+            h._machuca(this);
+            continue;
+          }
+          if (Math.sign(h.vx) !== volta) { // uma batida só
+            const borracha = esp === 'borracha';
+            if (o.cfg.blindado) o.clang(this);
+            else this.fx(desarmado ? 'BUM!' : borracha ? 'BOING' : 'TOC!', (h.x + o.x) / 2, o.y - 50, borracha ? '#f28aa0' : '#e9c77a', 0.9);
+            if (desarmado) o.atordoa(this, 3, '', -volta * 320);
+            else { o.tBloqueio = this.t; if (borracha) o.tQuica = this.t; }
+          }
+          h.vx = volta * (esp === 'borracha' ? 420 : 240);
           continue;
         }
         if (h.id === 'pudim' && o.especie === 'borracha') { // borracha quica na barriga
           o.f = Math.sign(o.x - h.x) || -o.f;
           o.x = h.x + o.f * (h.cfg.w / 2 + o.cfg.w / 2 + 2);
-          this.fx('BOING', o.x, o.y - 44, '#f28aa0', 0.8);
+          if (this.t - o.tQuica > 0.3) this.fx('BOING', o.x, o.y - 44, '#f28aa0', 0.8); // (presa contra a parede quica sem parar)
           o.tQuica = this.t;
           continue;
         }
@@ -152,7 +179,7 @@ class Mundo {
           if (this.t - o.tEmpurra > 0.4) { this.fx('TUM!', (h.x + o.x) / 2, o.y - 60, '#e9c77a', 0.8); o.tEmpurra = this.t; }
           continue;
         }
-        if (o.tonto > 0 || o.preso > 0) continue; // guarda tonto apontando o lápis, tesoureiro preso: não atacam
+        if (o.tonto > 0 || o.preso > 0 || o.zonzo > 0) continue; // guarda tonto apontando o lápis, tesoureiro preso, zonzo: não atacam
         h._machuca(this);
       }
     }
@@ -162,7 +189,7 @@ class Mundo {
   _grampos(dt) {
     for (const g of this.grampos) {
       g.x += g.vx * dt; g.vida -= dt;
-      if (this.nivel.solidoEm(g.x, g.y)) { g.vida = 0; continue; }
+      if (this.nivel.solidoEm(g.x, g.y) || this.nivel.noEstojo(g.x, g.y)) { g.vida = 0; continue; }
       if (g.rebatido) {
         for (const o of this.inimigos) {
           if (o.vivo && Math.abs(o.x - g.x) < o.cfg.w / 2 + 6 && g.y > o.y - o.cfg.h - 6 && g.y < o.y + 2) {
@@ -194,7 +221,7 @@ class Mundo {
     for (const b of this.bolinhas) {
       b.vy += L.g * dt;
       b.x += b.vx * dt; b.y += b.vy * dt; b.vida -= dt; b.giro += b.vx * dt / L.raio;
-      if (this.nivel.solidoEm(b.x, b.y) || b.y > this.nivel.altura + 50) { b.vida = 0; this.fx('puf', b.x, b.y - 10, '#fffdf6', 0.6); continue; }
+      if (this.nivel.solidoEm(b.x, b.y) || this.nivel.noEstojo(b.x, b.y) || b.y > this.nivel.altura + 50) { b.vida = 0; this.fx('puf', b.x, b.y - 10, '#fffdf6', 0.6); continue; }
       if (b.rebatida) {
         for (const o of this.inimigos) {
           const k = o.caixa();
@@ -250,6 +277,19 @@ class Mundo {
           h.diz('Abriu!');
         }
       }
+    }
+  }
+
+  // Ponto de controle (bandeirinha, 'K'): o primeiro herói de pé que encosta pega; o Jogo guarda a fase inteira
+  _pontos() {
+    for (const p of this.nivel.pontos) {
+      if (p.pego) continue;
+      const h = this.herois.find((q) => !['machucado', 'caido', 'arremessado'].includes(q.estado) && Math.abs(q.x - p.x) < 34 && q.y > p.y - 60 && q.y <= p.y + 4);
+      if (!h) continue;
+      p.pego = true;
+      this.pontoNovo = p;
+      this.fx('PONTO SALVO!', p.x, p.y - 130, '#3fb56a', 1.1);
+      this.som('chegou');
     }
   }
 
@@ -361,6 +401,7 @@ const Jogo = {
 
   carrega(i, def) {
     this.idx = i;
+    this.ponto = null; // (fase do começo: sem ponto de controle)
     this.def = def || this.defSala(i);
     let roteiro = this.def.roteiro;
     if (this.alt != null && ROTEIROS_ALT[this.alt] && ROTEIROS_ALT[this.alt].sala === i) roteiro = ROTEIROS_ALT[this.alt].r;
@@ -370,6 +411,41 @@ const Jogo = {
     this.mapa = false;
     this.atualizaCamera(0, true);
     if (this.salva) Progresso.entrou(i, this.def.nome);
+  },
+
+  // Ponto de controle (30/09, usuário: "tem que salvar o status de quando você passou no checkpoint: as alavancas já
+  // apertadas, os itens já usados"): a fase volta a ser a cópia guardada quando pegou a bandeirinha — os três onde
+  // estavam, corações, alavancas, portões, portas, chaves, cordas, paredes quebradas, inimigos. A cópia fica guardada
+  // (dá para voltar de novo).
+  voltaAoPonto() {
+    this.m = this.clona(this.ponto);
+    this.m.somAtivo = true;
+    this.m.fx('DE VOLTA AO PONTO!', this.m.heroi.x, this.m.heroi.y - 150, '#3fb56a', 1.1);
+    this.cache = null;
+    this.mapa = false;
+    this.atualizaCamera(0, true);
+  },
+  // Cópia funda do mundo: cada objeto e lista copiados, com a mesma classe e as mesmas ligações entre eles (quem segura
+  // a corda, de quem é a bolinha, o portão que está no mapa e na lista); o que não muda no jogo fica o mesmo: a
+  // definição da fase, os personagens (Cast), imagens, canvas e objetos do navegador
+  clona(m) {
+    const comum = new Set([m.def, ...Object.values(Cast), ...Object.values(CFG), BOLA, ...Object.values(CFG_INIMIGO)]), vistos = new Map(), nativo = /\[native code\]/;
+    const copia = (o) => {
+      if (o === null || typeof o !== 'object') return o;
+      if (vistos.has(o)) return vistos.get(o);
+      if (comum.has(o)) return o;
+      let c;
+      if (Array.isArray(o)) { c = []; vistos.set(o, c); for (const x of o) c.push(copia(x)); return c; }
+      if (o instanceof Map) { c = new Map(); vistos.set(o, c); for (const [k, v] of o) c.set(copia(k), copia(v)); return c; }
+      if (o instanceof Set) { c = new Set(); vistos.set(o, c); for (const v of o) c.add(copia(v)); return c; }
+      if (ArrayBuffer.isView(o)) { c = o.slice(); vistos.set(o, c); return c; }
+      const k = o.constructor;
+      if (typeof k === 'function' && k !== Object && nativo.test(Function.prototype.toString.call(k))) return o; // (canvas, imagem...)
+      c = Object.create(Object.getPrototypeOf(o)); vistos.set(o, c);
+      for (const q of Object.keys(o)) c[q] = copia(o[q]);
+      return c;
+    };
+    return copia(m);
   },
 
   // Câmera: segue quem você controla e olha um pouco para a frente; no mapa (M) mostra a fase inteira
@@ -407,13 +483,14 @@ const Jogo = {
     if (E.mapa) this.mapa = !this.mapa;
     if (E.menu && this.mapa) { this.mapa = false; return; }
     if (E.menu && !this.demo) { Menu.abre(this); return; }
-    if (E.reinicia) { this.carrega(this.idx, this.def); return; }
+    if (E.reinicia) { if (this.ponto) this.voltaAoPonto(); else this.carrega(this.idx, this.def); return; }
     if (E.nova && !this.cortina) { this.cortina = this.avulsa ? { t0: this.t, prox: this.idx, def: this.def, trocou: false } : { t0: this.t, prox: this.idx + 1, trocou: false }; }
     if (this.mapa && !this.demo) return; // mapa aberto: jogo parado para planejar
     if (E.esq || E.dir || E.pulo || E.acao || E.troca) this.intro = Math.min(this.intro, 0.99);
     if (this.intro < 1) this.intro = Math.max(0, this.intro - dt * 2);
     this.m.passo(dt, E);
     const m = this.m;
+    if (m.pontoNovo) { m.pontoNovo = null; this.ponto = this.clona(m); } // pegou a bandeirinha: guarda a fase como está
     if (m.estado === 'venceu' && m.t - m.tVenceu > 1.9 && !this.cortina) {
       // fase avulsa (?fase=): vencer recomeça a mesma — ou vai para a seguinte de uma sequência (a demo publicada:
       // depoisDaFase devolve { idx, def }, ou 'fim' e a página mostra o fim, com o jogo parado)
@@ -424,9 +501,9 @@ const Jogo = {
       if (this.salva) Progresso.venceu(this.idx);
       this.recorde = Math.max(this.recorde, this.idx + 1);
     }
-    if (m.estado === 'perdeu' && m.t - m.tPerdeu > 2.4 && !this.cortina) this.cortina = { t0: this.t, prox: this.idx, def: this.def, trocou: false };
+    if (m.estado === 'perdeu' && m.t - m.tPerdeu > 2.4 && !this.cortina) this.cortina = { t0: this.t, prox: this.idx, def: this.def, trocou: false, ponto: !!this.ponto };
     const c = this.cortina;
-    if (c && !c.trocou && this.t - c.t0 >= 0.5) { c.trocou = true; this.carrega(c.prox, c.def); }
+    if (c && !c.trocou && this.t - c.t0 >= 0.5) { c.trocou = true; if (c.ponto) this.voltaAoPonto(); else this.carrega(c.prox, c.def); }
     if (c && this.t - c.t0 >= 1.0) this.cortina = null;
   },
 
@@ -463,24 +540,43 @@ const Jogo = {
   },
 
   // Nuvens no plano da frente (30/09, usuário: "ficariam mais legais se viessem para frente", "mais em cima, no lugar
-  // mais livre"): penduradas no teto (ou no alto da fase) por um fio, no alto de cada vão de ar livre, e andando um pouco
-  // mais rápido que a câmera (1,12x, em volta do meio da tela). Antes ficavam na paisagem, e numa fase de vários andares
-  // apareciam na altura das plataformas, encostadas nelas. Lugar: 6x2 blocos livres com 1 de folga, o teto até 3 blocos
-  // acima (ou o alto da fase), 4 blocos livres embaixo; uma a cada ~700 px.
+  // mais livre"), andando um pouco mais rápido que a câmera (1,12x, em volta do meio da tela).
+  // 01/10 (usuário: "o fio termina e não está amarrado em lugar nenhum... tem que esticar até o topo da tela sempre";
+  // "parece em lugares aleatórios"; "nuvens maiores"): o fio vai sempre até o alto da tela (está no plano da frente:
+  // passa na frente das plataformas, preso lá em cima, fora da vista). Antes ia até o "teto" achado no mapa, mas a
+  // paralaxe tirava a nuvem de baixo dele e o fio acabava no ar. Lugar, por regra (NUVEM): a nuvem grande inteira
+  // (com a folga da paralaxe) em ar livre, longe de qualquer coisa de jogo (objetos, inimigos, saída, estante) e com
+  // NUVEM.vao blocos livres embaixo (fora do alcance do pulo de quem anda no chão de baixo); em cada trecho de
+  // NUVEM.passo px, a mais alta que couber — fica no céu de cima, não colada no chão.
   _nuvens() {
-    const n = this.m.nivel, T = TILE, livre = (c, l) => l < 0 || (c >= 0 && c < n.cols && l < n.lins && n.grade[l][c] === '.');
-    const lista = [];
-    for (let l = 1; l < n.lins - 7; l++) for (let c = 4; c < n.cols - 4; c++) {
-      let ok = true;
-      for (let q = l - 1; q <= l + 5 && ok; q++) for (let k = c - 4; k <= c + 3 && ok; k++) if (!livre(k, q)) ok = false;
-      if (!ok) continue;
-      let teto = null;
-      for (let q = l - 2; q >= l - 4; q--) if (q < 0 || !livre(c, q)) { teto = q < 0 ? -10 : (q + 1) * T; break; }
-      if (teto === null) continue;
-      const x = c * T, y = (l + 1) * T;
-      if (lista.some((o) => Math.abs(o.x - x) < 700 && Math.abs(o.y - y) < 320)) continue;
-      const i = lista.length;
-      lista.push({ x, y, teto, s: 1.25 + (i % 3) * 0.15, fase: i * 1.7 });
+    const n = this.m.nivel, T = TILE, N = NUVEM, livre = (c, l) => l < 0 || (c >= 0 && c < n.cols && l < n.lins && n.grade[l][c] === '.');
+    const pontos = [...n.pinos, ...n.controles, ...n.chaves, ...n.rolos, ...n.pontos, ...n.durex, ...n.gangorras, ...n.postits,
+      ...n.inimigosDef, ...Object.values(n.spawns)];
+    const coisas = [
+      ...pontos.map((p) => [p.x - 70, p.y - 170, p.x + 70, p.y + 10]),
+      ...n.carimbos.map((k) => [k.x - 80, k.teto - 10, k.x + 80, k.chao + 10]),
+      ...n.estantes.map((e) => [e.x0 - 20, e.y0 - 20, e.x1 + 20, e.y1 + 10]),
+      [n.saida.x0 - 40, n.saida.y0 - 60, n.saida.x1 + 40, n.saida.y1 + 10],
+    ];
+    const cabe = (c, l) => { // l = a linha do meio da nuvem
+      const c0 = c - N.meiaLarg, c1 = c + N.meiaLarg, l0 = l - N.cima, l1 = l + N.baixo + N.vao;
+      for (let q = l0; q <= l1; q++) for (let k = c0; k <= c1; k++) if (!livre(k, q)) return false;
+      const x0 = c0 * T, x1 = (c1 + 1) * T, y0 = l0 * T, y1 = (l + N.baixo + 1) * T;
+      return !coisas.some(([a, b, d, e]) => a < x1 && d > x0 && b < y1 && e > y0);
+    };
+    // (de cima para baixo: a primeira que cabe no trecho e, mais embaixo, outra a cada N.andar px — o céu de cada andar)
+    const lista = [], perto = (x, y) => lista.some((o) => Math.abs(o.x - x) < N.passo * 0.7 && Math.abs(o.y - y) < N.andar);
+    for (let x0 = 0; x0 < n.largura; x0 += N.passo) {
+      // (o topo dela a N.topo px do alto da fase, no mínimo: com a câmera lá em cima, a paralaxe a sobe para trás do HUD)
+      for (let l = N.cima + Math.ceil(N.topo / T); l < n.lins - N.baixo - N.vao; l++) {
+        for (let c = Math.floor(x0 / T) + N.meiaLarg; c < Math.floor((x0 + N.passo) / T) - N.meiaLarg; c++) {
+          const x = (c + 0.5) * T, y = (l + 0.5) * T;
+          if (perto(x, y) || !cabe(c, l)) continue;
+          const i = lista.length, grande = i % 2 === 0;
+          lista.push({ x, y, s: grande ? N.grande : N.media, tipo: grande ? 0 : 1, fase: i * 1.7 });
+          break;
+        }
+      }
     }
     return lista;
   },
@@ -513,6 +609,7 @@ const Jogo = {
     n.desenhaVivo(ctx, t, m.herois.map((h) => !!h.dentro), v);
     m.cordas.desenha(ctx);
     for (const o of m.inimigos) if (o.x > v.x0 - 120 && o.x < v.x1 + 120) o.desenha(ctx, m.t); // tempo do mundo (bloqueou, empurrou...)
+    n.desenhaEstojos(ctx, v);
     for (const g of m.grampos) desenhaGrampo(ctx, g);
     for (const b of m.bolinhas) desenhaBolinha(ctx, b);
 
@@ -528,12 +625,13 @@ const Jogo = {
         V.extra, h.id === 'fiapo' ? { semRolo: m.cordas.estoque <= 0 } : {});
       Desenho.personagem(ctx, h.ch, V.M, st);
     }
+    n.desenhaFrente(ctx, v, m.estado === 'jogando' && !this.mapa ? m.heroi : null); // pilares: os heróis passam por trás
     // plano da frente: as nuvens (por cima do jogo, por baixo da seta, das falas e dos efeitos)
     if (v.par) {
       const cx = (v.x0 + v.x1) / 2, cy = (v.y0 + v.y1) / 2;
       for (const q of this.cache.fundo.nuvens) {
         const x = cx + (q.x - cx) * 1.12, y = cy + (q.y - cy) * 1.12;
-        if (x > v.x0 - 150 && x < v.x1 + 150 && y > v.y0 - 80 && y < v.y1 + 80) Cenario.nuvem(ctx, x, y, q.s, t, q.fase, Math.max(q.teto, v.y0 - 10));
+        if (x > v.x0 - 200 && x < v.x1 + 200 && y > v.y0 - 120 && y < v.y1 + 120) Cenario.nuvem(ctx, x, y, q.s, t, q.fase, v.y0 - 10, q.tipo);
       }
     }
     // no mapa: marcadores grandes em cima de cada um, da chave e da saída
@@ -688,7 +786,7 @@ const Jogo = {
     });
     if (m.estado === 'perdeu') {
       const h = m.herois.find((q) => q.estado === 'caido');
-      Estilo.texto(ctx, `${h ? h.ch.nome : 'Alguém'} não aguentou! Recomeçando...`, this.W / 2, this.H / 2 - 40, { tam: 40, cor: '#fffdf6' });
+      Estilo.texto(ctx, `${h ? h.ch.nome : 'Alguém'} não aguentou! ${this.ponto ? 'Voltando ao ponto de controle...' : 'Recomeçando...'}`, this.W / 2, this.H / 2 - 40, { tam: 40, cor: '#fffdf6' });
     }
     // no toque, os botões MAPA/menu ocupam o canto de cima: o nome da fase desce e as teclas não aparecem
     const toque = Toque.ativo, yNome = toque ? 94 : 58;
@@ -696,7 +794,7 @@ const Jogo = {
     ctx.textAlign = 'right';
     ctx.font = `17px ${FONTE_FALA}`;
     ctx.fillStyle = '#2b1f2e';
-    if (!toque) ctx.fillText('← → anda (2x corre)   ↑/espaço pula   Tab troca   E habilidade   M mapa   R recomeça   V som/música   Esc menu', this.W - 16, 26);
+    if (!toque) ctx.fillText(`← → anda (2x corre)   ↑/espaço pula   Tab troca   E habilidade   M mapa   R ${this.ponto ? 'volta ao ponto' : 'recomeça'}   V som/música   Esc menu`, this.W - 16, 26);
     Estilo.texto(ctx, `Fase ${this.idx + 1} — ${m.def.nome}`, this.W - 16, yNome, { tam: 24, cor: '#fffdf6', alinha: 'right' });
     const rec = this.salva ? Progresso.recorde() : this.recorde;
     if (rec > 0) {
