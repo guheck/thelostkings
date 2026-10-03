@@ -100,6 +100,10 @@
   dialog input[type=number] { width: 80px; }
   dialog textarea { width: 100%; height: 70px; font-size: 13px; }
   dialog .fecha { float: right; }
+  dialog .miuda { font-size: 13px; opacity: .8; max-width: 520px; }
+  #lista-coment li { margin: 4px 0; white-space: pre-wrap; }
+  #lista-coment li small { opacity: .7; }
+  #lista-coment .apaga-coment { margin-left: 8px; padding: 0 6px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -112,6 +116,7 @@
   <button id="b-salvar" title="Guarda em Minhas fases, neste navegador; no PC, também em fases/ (Ctrl+S)">Salvar</button>
   <button id="b-jogar" class="forte" title="Joga a fase do começo">▶ Jogar</button>
   <button id="b-daqui" title="Clique no chão onde os heróis começam e jogue dali (para testar um trecho)">▶ daqui</button>
+  <button id="b-coment" title="Comentários na fase (ferramenta Comentar, na paleta): manda todos para o Claude">💬 Enviar comentários</button>
   <span class="sep"></span>
   <button id="b-desfaz" title="Desfazer (Ctrl+Z)">↶</button>
   <button id="b-refaz" title="Refazer (Ctrl+Y)">↷</button>
@@ -178,6 +183,25 @@
   <span>Selecionar (Esc): clique e arraste; alças mudam o tamanho; setas empurram; Ctrl+C / Ctrl+V / Ctrl+D; Delete apaga · com peça na mão: esquerdo pinta, direito apaga, Shift+arrastar enche um retângulo · espaço+arrastar ou botão do meio: anda na tela · roda: zoom · ?: ajuda</span>
 </footer>
 
+<dialog id="dlg-coment">
+  <h2>Comentário <span id="coment-num"></span></h2>
+  <p id="coment-onde" class="miuda"></p>
+  <textarea id="coment-texto" style="height:130px" placeholder="O que você quer que o Claude mude aqui? (ex.: este pulo está difícil demais; ponha um inimigo aqui...)"></textarea>
+  <div class="linha" style="margin-top:6px"><button id="coment-ok" class="forte">Guardar</button>
+    <button id="coment-apaga">Apagar</button><button id="coment-cancela">Cancelar</button></div>
+</dialog>
+
+<dialog id="dlg-enviar">
+  <button class="fecha">Fechar</button>
+  <h2>Enviar comentários para o Claude</h2>
+  <p class="miuda">Vai a fase aberta (como está agora) com cada retângulo e o que você escreveu. No PC, o servidor do jogo
+    grava em <code>fases/comentarios/</code>; no link do claude.ai, vai para o banco do link. Depois é só avisar na conversa:
+    "mandei os comentários".</p>
+  <ol id="lista-coment"></ol>
+  <div class="linha"><button id="b-envia" class="forte">Enviar</button> <button id="b-apaga-todos">Apagar todos</button></div>
+  <p id="envio-res"></p>
+</dialog>
+
 <dialog id="dlg-abrir">
   <button class="fecha">Fechar</button>
   <h2>Abrir fase</h2>
@@ -209,6 +233,13 @@
   <p>Os <b>quadradinhos</b> nos cantos e nos lados mudam o tamanho: da estante, da prateleira, da escada, do portão e do
     enfeite.</p>
   <p>Arraste no <b>vazio</b> para pegar uma área. Depois dá para arrastar a área inteira, copiar, encher ou apagar.</p>
+  <h3>Comentar (o balão, na paleta): pedir mudanças ao Claude</h3>
+  <p>Com o <b>comentar</b> na mão, <b>arraste um retângulo</b> em cima do que quer mudar e escreva o que é. O comentário
+    fica na fase, em vermelho. Para <b>apagar</b>: o <b>×</b> no canto dele (com qualquer ferramenta), ou selecione (clique
+    nele com o Selecionar) e Delete; o 🗑 na lista do Enviar também apaga. Clicar no número ou no texto muda o texto; com
+    o Selecionar dá para arrastar e mudar o tamanho. Quando terminar,
+    <b>💬 Enviar comentários</b>, em cima: vai a fase como está, com cada retângulo e o texto. Depois é só avisar na
+    conversa: "mandei os comentários". Os já enviados ficam com a borda cheia e um ✓.</p>
   <h3>O que encosta se junta</h3>
   <p>Blocos iguais encostados viram uma peça só: papelão encostado vira uma laje inteira; livros deitados da mesma cor
     na mesma fileira viram um livro só (cores diferentes lado a lado ficam livros separados: escolha a cor na paleta ou

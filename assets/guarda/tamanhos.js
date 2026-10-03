@@ -1,0 +1,3 @@
+// Tamanho LÓGICO de cada quadro (px das medidas do animacoes.js): a imagem é menor, na resolução nativa
+// (tools/nativo_sprites.py). Gerado: não editar à mão.
+Sprites.tamanhos('guarda', {"amassado1": [296, 102], "anda1": [189, 271], "anda2": [189, 271], "anda3": [192, 276], "anda4": [195, 276], "anda5": [196, 273], "anda6": [195, 273], "anda7": [193, 278], "anda8": [190, 277], "arma1": [268, 235], "derrotado1": [347, 236], "estoca1": [342, 218], "parado1": [168, 264], "quebra1": [360, 235], "quebra2": [156, 244], "recolhe1": [224, 248], "tonto1": [194, 246], "tonto2": [178, 246]});

@@ -9,6 +9,20 @@ const comObjetos = () => typeof Objetos !== 'undefined' && Objetos.pronto();
 // faixa do tampo do chão: altura, recuo das pontas, cores (do papelão da laje)
 const FAIXA_CHAO = { h: 28, recuo: 10, quina: 4, fundo: '#d9954f', frente: '#f6bb74', linha: '#2b1a12', veio: 'rgba(120,70,30,0.35)' };
 
+// Quarto atrás da mesa (02/10, usuário: "pode fazer o fundo com a estante e a janela"): a paisagem de morros e castelo
+// dizia "lá fora" e a fase diz "em cima da mesa". Parede de papel listrado com lambri, janela(s) com cortina e
+// parapeito (o vidro é furado: a paisagem fica atrás, andando mais devagar que a parede — QUARTO.longe) e estantes de
+// livros nos vãos (o mesmo kit da IA das estantes da fase). Medidas em px do fundo (a parede anda a 0,2 da câmera).
+const QUARTO = {
+  parede: '#ecdcc0', listra: 'rgba(205, 178, 136, 0.28)', passo: 38, lambri: 0.74,
+  madeira: '#b98457', painel: '#c99668', friso: '#d9ab7c',
+  batente: '#f5ecdc', parapeito: '#f8f1e4', vidro: 'rgba(255, 255, 255, 0.16)',
+  cortina: '#5aa79e', dobra: '#3f857d', vara: '#6b4428',
+  cada: 1700, jw: 520, jh: 470, topo: 0.13, lado: 120, estanteMin: 420, estanteMax: 380, estanteTopo: 0.19,
+  nevoa: 0.5, // névoa nas estantes do fundo
+  longe: 0.12, // a paisagem pela janela: anda a 0,12 da câmera (a parede, a 0,2)
+};
+
 const Cenario = {
   // Folha de papel lisa ocupando a área
   folha(ctx, x, y, w, h, cor) {
@@ -46,6 +60,86 @@ const Cenario = {
     }, { cor: '#ffd35a' }, { elev: 3, linha: 3 });
     Estilo.forma(ctx, (c) => U.circulo(c, 0, 0, r * 0.82), { cor: '#ffe483', luz: false }, { elev: 1.5, linha: 0, cel: false });
     ctx.restore();
+  },
+
+  // A parede do quarto inteira (W x H px do fundo): devolve onde ficam os vidros das janelas
+  // onde ficam as janelas numa parede W x H: uma a cada QUARTO.cada px (no mínimo uma), no alto da parede
+  planoQuarto(W, H) {
+    const Q = QUARTO, yl = Math.round(H * Q.lambri), jt = Math.round(H * Q.topo), jh = Math.min(Q.jh, yl - jt - 80);
+    const k = Math.max(1, Math.round(W / Q.cada));
+    return { yl, jt, jh, jw: Q.jw, xs: [...Array(k)].map((_, i) => Math.round(W * (i + 0.5) / k)) };
+  },
+  quarto(g, W, H) {
+    const Q = QUARTO, { yl, jt, jh, jw, xs } = this.planoQuarto(W, H);
+    g.fillStyle = Q.parede; g.fillRect(0, 0, W, H);
+    g.fillStyle = Q.listra;
+    for (let x = 0; x < W; x += Q.passo) g.fillRect(x, 0, Math.round(Q.passo * 0.42), yl);
+    // lambri: tábuas com painéis e o friso em cima
+    Estilo.forma(g, (c) => { c.beginPath(); c.rect(-10, yl, W + 20, H - yl + 10); }, { cor: Q.madeira }, { elev: 1, linha: 3, cel: false });
+    for (let x = 24; x < W; x += 132) Estilo.forma(g, (c) => U.retRed(c, x, yl + 30, 100, H - yl, 6), { cor: Q.painel, luz: false }, { elev: 0, linha: 2.5, cel: false });
+    Estilo.forma(g, (c) => { c.beginPath(); c.rect(-10, yl - 16, W + 20, 18); }, { cor: Q.friso }, { elev: 1.5, linha: 3, cel: false });
+    // janelas espalhadas; uma estante em cada vão largo (entre elas e nas pontas), atrás das cortinas
+    const bordas = [0, ...xs.flatMap((x) => [x - jw / 2 - Q.lado, x + jw / 2 + Q.lado]), W];
+    for (let i = 0; i + 1 < bordas.length; i += 2) {
+      const a = bordas[i], b = bordas[i + 1];
+      if (b - a < Q.estanteMin || !comObjetos()) continue;
+      const ew = Math.min(Q.estanteMax, b - a - 80), x0 = Math.round((a + b) / 2 - ew / 2);
+      // numa tela à parte, com névoa da cor da parede só em cima dela (como a decoração do plano de trás): os livros do
+      // fundo não podem parecer plataforma nem disputar com os da fase
+      const y0 = Math.round(H * Q.estanteTopo), m = 50, tw = ew + 2 * m, th = H - y0 + 2 * m, R = g.getTransform().a;
+      const t = document.createElement('canvas'); t.width = Math.ceil(tw * R); t.height = Math.ceil(th * R);
+      const q = t.getContext('2d'); q.scale(R, R); q.translate(m - x0, m - y0); // (na resolução da parede)
+      Objetos.estante(q, { x0, x1: x0 + ew, y0, y1: H + 80, cheio: H + 80, andar: 4, c0: 7 + i * 5 });
+      q.setTransform(1, 0, 0, 1, 0, 0); q.globalCompositeOperation = 'source-atop'; q.globalAlpha = Q.nevoa;
+      q.fillStyle = Q.parede; q.fillRect(0, 0, t.width, t.height);
+      g.drawImage(t, x0 - m, y0 - m, tw, th);
+    }
+    for (const x of xs) this.janela(g, x, jt, jw, jh);
+    return xs.map((x) => ({ x0: x - jw / 2, y0: jt, x1: x + jw / 2, y1: jt + jh }));
+  },
+  // Janela: batente pintado, vidro furado (com brilho), travessas em cruz, parapeito e cortina presa dos dois lados
+  janela(g, x, top, w, h) {
+    const Q = QUARTO, x0 = x - w / 2, x1 = x + w / 2;
+    Estilo.forma(g, (c) => U.retRed(c, x0 - 26, top - 26, w + 52, h + 44, 8), { cor: Q.batente }, { elev: 2, linha: 3.5 });
+    g.save(); g.globalCompositeOperation = 'destination-out'; g.fillRect(x0, top, w, h); g.restore();
+    g.save();
+    g.beginPath(); g.rect(x0, top, w, h); g.clip();
+    g.fillStyle = Q.vidro; // brilhos do vidro, em diagonal
+    for (const [dx, lw] of [[0.12, 40], [0.27, 14], [0.62, 28]]) {
+      const bx = x0 + w * dx;
+      g.beginPath(); g.moveTo(bx, top + h); g.lineTo(bx + lw, top + h); g.lineTo(bx + lw + h * 0.45, top); g.lineTo(bx + h * 0.45, top); g.closePath(); g.fill();
+    }
+    g.strokeStyle = 'rgba(70, 45, 25, 0.3)'; g.lineWidth = 10; g.strokeRect(x0, top, w, h); // a sombra do batente no vidro
+    g.restore();
+    const t = 16; // travessas
+    Estilo.forma(g, (c) => U.retRed(c, x - t / 2, top - 2, t, h + 4, 3), { cor: Q.batente }, { elev: 1, linha: 2.5 });
+    Estilo.forma(g, (c) => U.retRed(c, x0 - 2, top + h * 0.46 - t / 2, w + 4, t, 3), { cor: Q.batente }, { elev: 1, linha: 2.5 });
+    Estilo.forma(g, (c) => U.retRed(c, x0 - 50, top + h + 8, w + 100, 24, 6), { cor: Q.parapeito }, { elev: 2, linha: 3 });
+    // vara e cortinas (franzidas em cima, presas no meio, abrindo embaixo)
+    const yv = top - 56, yb = top + h + 74, yt = top + h * 0.6;
+    Estilo.forma(g, (c) => U.retRed(c, x0 - 150, yv - 5, w + 300, 10, 5), { cor: Q.vara }, { elev: 1, linha: 2.5 });
+    for (const s of [-1, 1]) {
+      const fora = s < 0 ? x0 - 130 : x1 + 130, dentro = s < 0 ? x0 + 36 : x1 - 36, preso = s < 0 ? x0 - 14 : x1 + 14, pe = s < 0 ? x0 + 6 : x1 - 6;
+      const corpo = (c) => {
+        c.beginPath(); c.moveTo(fora, yv); c.lineTo(dentro, yv);
+        c.quadraticCurveTo(dentro - s * 6, yt - 60, preso, yt);
+        c.quadraticCurveTo(preso, yt + 70, pe, yb);
+        for (let i = 1; i <= 5; i++) { const xx = pe + (fora - 8 * s - pe) * (i / 5); c.quadraticCurveTo(xx + (pe - fora) / 10, yb + (i % 2 ? 10 : -4), xx, yb); }
+        c.quadraticCurveTo(fora - 6 * s, yt + 40, fora, yv);
+        c.closePath();
+      };
+      Estilo.forma(g, corpo, { cor: Q.cortina }, { elev: 1.5, linha: 3 });
+      g.save(); // dobras: do alto até o laço e do laço para baixo
+      g.strokeStyle = Q.dobra; g.lineWidth = 3; g.lineCap = 'round';
+      for (const f of [0.25, 0.5, 0.75]) {
+        const xa = U.lerp(fora, dentro, f), xm = U.lerp(fora, preso, f), xz = U.lerp(fora, pe, f);
+        g.beginPath(); g.moveTo(xa, yv + 8); g.quadraticCurveTo(U.lerp(xa, xm, 0.5), yt - 50, xm, yt - 12); g.stroke();
+        g.beginPath(); g.moveTo(xm, yt + 14); g.quadraticCurveTo(U.lerp(xm, xz, 0.6), yt + 70, xz, yb - 6); g.stroke();
+      }
+      g.restore();
+      Estilo.forma(g, (c) => U.retRed(c, Math.min(fora, preso) + 6, yt - 9, Math.abs(preso - fora) - 12, 18, 7), { cor: Q.friso }, { elev: 1, linha: 2.5 });
+      Estilo.forma(g, (c) => U.circulo(c, s < 0 ? x0 - 156 : x1 + 156, yv, 10), { cor: Q.vara }, { elev: 1, linha: 2.5 }); // ponta da vara
+    }
   },
 
   // Colina ondulada de uma camada (colinaY: a altura da crista em x)

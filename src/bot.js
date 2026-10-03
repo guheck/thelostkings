@@ -931,27 +931,43 @@ const FASES_PROIBIDAS = {
       prepara: (m) => { const [ma, f] = m.herois; f.x = 1240; f.y = 1920; ma.x = 1196; ma.y = 1920; ma.f = 1; },
       r: [['ativa', 'marreta'], ['gancho'], ['espera', 2]],
     },
-    // Trena (etapa 7, 01/10): o lado de lá do vão (a caixa e o chão até a escada) só se alcança pelo duto, em bola. Nem o
-    // Fiapo correndo (do alto do piso do estojo ou do pé da escada), nem o Marreta arremessando o Fiapo ou dando o gancho
-    // no Pudim: o chão do duto, 160 px acima da fita, corta todos os arcos (e o blindado está na fita)
+    // Trena (etapa 7, 01/10): o lado de lá do vão (a caixa e o chão até a fita) só se alcança pelo duto, em bola. Nem o
+    // Fiapo correndo (do alto do piso do estojo, do degrau ou do chão embaixo da boca do duto), nem o Marreta arremessando
+    // o Fiapo ou dando o gancho no Pudim: o chão do duto, 160 px acima da fita, corta todos os arcos (e o blindado está
+    // na fita). 02/10: escada não tem — a boca do duto (54-55, 120 px acima do degrau) é do gancho do Marreta no Pudim;
+    // sozinho o Pudim não sobe (e o Fiapo, que sobe, não pula de lá para o lado de lá)
     {
       nome: 'trena: o Fiapo correndo do alto do estojo (já no fosso) não pula o vão', id: 'fiapo', onde: TRENA_LA,
       prepara: (m) => {
         const f = m.herois[1], e = m.nivel.estojos[0];
-        e.x = 2420; e.y = 1360; m.inimigos = m.inimigos.filter((o) => !(o.especie === 'guarda' && o.y === 1280));
-        f.x = 2640; f.y = 1280;
+        e.x = 2500; e.y = 1360; m.inimigos = m.inimigos.filter((o) => !(o.especie === 'guarda' && o.y === 1280));
+        f.x = 2720; f.y = 1280;
       },
-      r: [['ativa', 'fiapo'], ['segura', 'esq', 0.05], ['espera', 0.05], ['salta', 2285, 1500], ['espera', 2]],
+      r: [['ativa', 'fiapo'], ['segura', 'esq', 0.05], ['espera', 0.05], ['salta', 2365, 1500], ['espera', 2]],
     },
     {
-      nome: 'trena: o Fiapo do pé da escada não pula o vão', id: 'fiapo', onde: TRENA_LA,
+      nome: 'trena: o Fiapo do chão embaixo da boca do duto não pula o vão', id: 'fiapo', onde: TRENA_LA,
       prepara: (m) => { const f = m.herois[1]; f.x = 2236; f.y = 1360; },
       r: [['ativa', 'fiapo'], ['salta', 2236, 1500], ['espera', 2]],
     },
     {
-      nome: 'trena: do alto da escada do duto, o Fiapo não pula para o lado de lá', id: 'fiapo', onde: TRENA_LA,
-      prepara: (m) => { const f = m.herois[1]; f.x = 2200; f.y = 1360; },
-      r: [['ativa', 'fiapo'], ['sobe', 3], ['salta', 2200, 1500], ['espera', 2]],
+      nome: 'trena: da boca do duto, o Fiapo não pula para o lado de lá', id: 'fiapo', onde: TRENA_LA,
+      prepara: (m) => { const f = m.herois[1]; f.x = 2220; f.y = 1160; },
+      r: [['ativa', 'fiapo'], ['salta', 2220, 1500], ['espera', 2]],
+    },
+    ...[['acao', 'soco reto'], ['gancho', 'gancho']].map(([g, nome]) => ({
+      nome: `trena: o ${nome} do Marreta no degrau não joga o Fiapo para o lado de lá`, id: 'fiapo', onde: TRENA_LA,
+      prepara: (m) => {
+        const [ma, f] = m.herois, e = m.nivel.estojos[0];
+        e.x = 2500; e.y = 1360; m.inimigos = m.inimigos.filter((o) => !(o.especie === 'guarda' && o.y === 1280));
+        f.x = 2360; f.y = 1280; ma.x = 2405; ma.y = 1280; ma.f = -1;
+      },
+      r: [['ativa', 'marreta'], [g], ['espera', 2.5]],
+    })),
+    {
+      nome: 'trena: sozinho o Pudim não sobe na boca do duto (só com o gancho)', id: 'pudim', onde: BOCA_DUTO,
+      prepara: (m) => { const p = m.herois[2]; p.x = 2370; p.y = 1280; },
+      r: [['ativa', 'pudim'], ['salta', 2345, 2200], ['espera', 2]],
     },
     {
       nome: 'trena: o Marreta não arremessa o Fiapo por cima do vão', id: 'fiapo', onde: TRENA_LA,
@@ -967,6 +983,8 @@ const FASES_PROIBIDAS = {
 };
 // o lado de lá do vão da trena na Mesa nova: o chão entre a escada e a caixa (x < 1880, y 1360) ou em cima da caixa
 function TRENA_LA(h) { return h.noChao && h.x < 1925 && h.x > 1600 && h.y > 1300 && h.y < 1365; }
+// a boca do duto da trena (02/10: o chão do duto continua em 54-55, onde o gancho do Marreta põe o Pudim; o degrau, 58-59)
+function BOCA_DUTO(h) { return h.noChao && h.x > 2150 && h.x < 2250 && h.y < 1200; }
 // Erros que o jogador comete e de que tem que dar para se recuperar (30/09, usuário: "não só assim, o jogador fez tudo
 // certo e conseguiu passar; e se der algo errado?"): o robô erra de propósito, conserta e o teste confere que chegou
 // (ok) sem perder coração. Com as coisas que mexem com o tempo (a gangorra); o resto, o confereVolta.
@@ -1523,7 +1541,56 @@ Jogo.testaFases = async function () {
     r.push(...confereVolta(def));
     if (def.mapa.some((l) => l.includes('K'))) r.push(conferePonto(def));
   }
+  r.push(...await Jogo.confereResolucao());
   return r;
+};
+
+// Resolução (03/10, usuário: "isso de redimensionar não funciona, fica feio demais"): cada fase desenhada inteira na tela
+// nativa (NATIVA, util.js) e, para cada imagem, a escala em que ela aparece — px da tela por px da imagem, no eixo
+// menos esticado (fatia esticada só estica num eixo). Acima de 1,05 a imagem aparece AMPLIADA (mole): recortar de novo na
+// resolução nativa (tools/recorta_nativo.py; folha da IA com pouca resolução: pedir de novo). Mede o que vai para a tela
+// e para os canvas montados na resolução dela (c._nativa: o fundo, a estante). Não mexe no jogo que está rodando.
+// (tudo = true: o log traz a escala de todas, da maior para a menor)
+Jogo.confereResolucao = async function (fases = FASES_PROVADAS, tudo = false) {
+  if (typeof Objetos === 'undefined' || !Objetos.ativo) return [];
+  for (let i = 0; i < 200 && !Objetos.pronto(); i++) await new Promise((ok) => setTimeout(ok, 50));
+  const nome = new Map();
+  for (const [k, v] of Object.entries(Objetos.imgs)) if (v) nome.set(v, k);
+  if (typeof Sprites !== 'undefined') for (const [k, v] of Object.entries(Sprites.imgs)) if (v && v.img) { nome.set(v.img, k); if (v.escura) nome.set(v.escura, k); }
+  const E = {};
+  U.medeArte = (ctx, img, a) => {
+    if (ctx !== this.ctx && !ctx.canvas._nativa) return;
+    const T = ctx.getTransform(), sx = Math.hypot(T.a, T.b), sy = Math.hypot(T.c, T.d);
+    const nw = img.naturalWidth || img.width, nh = img.naturalHeight || img.height, rx = img._rx || 1, ry = img._ry || 1;
+    let sw = nw, sh = nh, dw, dh;
+    if (a.length === 3) { dw = img._lw || nw; dh = img._lh || nh; } else if (a.length === 5) { dw = a[3]; dh = a[4]; } else { sw = a[3] * rx; sh = a[4] * ry; dw = a[7]; dh = a[8]; }
+    if (sw < 3 || sh < 3 || !(dw > 0) || !(dh > 0)) return;
+    const e = Math.min(dw * sx / sw, dh * sy / sh), n = nome.get(img) || (img.src ? img.src.split('/').slice(-2).join('/') : `canvas ${nw}x${nh}`);
+    E[n] = Math.max(E[n] || 0, e);
+  };
+  const salvo = { m: this.m, cam: this.cam, cache: this.cache, mapa: this.mapa, cw: this.cv.width, ch: this.cv.height, escala: this.escala };
+  try {
+    this.cv.width = NATIVA.w; this.cv.height = NATIVA.h; this.escala = NATIVA.w / this.W; this.mapa = false;
+    for (const f of fases) {
+      const def = await (await fetch(`fases/${f}.json`, { cache: 'no-store' })).json();
+      this.m = new Mundo(def, {}); this.cache = null;
+      const n = this.m.nivel;
+      for (let y = 0; y < n.altura; y += this.H * 0.85) {
+        for (let x = 0; x < n.largura; x += this.W * 0.85) {
+          this.cam = { x: Math.min(x, Math.max(0, n.largura - this.W)), y: Math.min(y, Math.max(0, n.altura - this.H)), z: 1 };
+          this.ctx.setTransform(this.escala, 0, 0, this.escala, 0, 0); this.desenha(this.ctx);
+        }
+      }
+    }
+  } finally {
+    U.medeArte = null;
+    Object.assign(this, { m: salvo.m, cam: salvo.cam, mapa: salvo.mapa, escala: salvo.escala, cache: null });
+    this.cv.width = salvo.cw; this.cv.height = salvo.ch;
+    if (this.m) this.pinta();
+  }
+  const todas = Object.entries(E).sort((p, q) => q[1] - p[1]), ruins = todas.filter(([, e]) => e > 1.05);
+  return [{ sala: 'resolução', nome: `resolução: nada ampliado na tela nativa (${todas.length} imagens)`, venceu: !ruins.length,
+    log: (tudo ? todas : ruins).map(([n, e]) => `${n}: ${e.toFixed(2)}x`) }];
 };
 
 // Cada golpe do Marreta tem que ser preciso onde a fase pede: trocando pelo outro, o robô tem que PERDER.

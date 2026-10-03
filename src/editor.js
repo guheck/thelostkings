@@ -14,7 +14,8 @@
 // Mover é a ferramenta de começo; estante, livros deitados e enfeites entraram na paleta; a sala foi para o fim
 const GRUPOS = [
   ['Ferramentas', [['mover', 'Selecionar (Esc): clique numa peça, num bloco, na estante ou num enfeite; arraste para mudar de lugar; os quadradinhos mudam o tamanho; no vazio, arraste para pegar uma área. O painel à direita mostra o que dá para mudar'],
-    ['.', 'Apagar']]],
+    ['.', 'Apagar'],
+    ['comentar', 'Comentar: arraste um retângulo em cima do que quer mudar e escreva o que é (clique num comentário para mudar o texto; botão direito dentro apaga). "Enviar comentários", em cima, manda todos para o Claude']]],
   ['Blocos', [['#', 'Papelão'], ['b', 'Livros deitados: bloco sólido como o papelão; cada fileira é um livro (empilhe para degrau)'],
     ['estante', 'Estante de livros: arraste um retângulo, do topo até o chão. Os blocos dela viram prateleiras cheias de livros (o topo se pisa). Apague embaixo para abrir a passagem; um portão da alavanca (L) dentro dela vira o livro-portão. Botão direito dentro tira a estante'],
     ['C', 'Parede fraca (papelão remendado) — o soco do Marreta quebra'], ['F', 'Folha de papel — a bundada do Pudim rasga'],
@@ -162,9 +163,9 @@ const Ed = {
     else if (rasc && rasc.def && this.abreDef(rasc.def, rasc.salvaId, true)) this.msg('Rascunho recuperado (o que estava aberto da última vez).');
     // os desenhos da IA chegam depois: refaz a tela e os ícones quando estiverem prontos
     const espera = () => {
-      const ok = [...ORDEM, 'guarda', 'escudeiro', 'borracha', 'grampeador'].every((id) => !Sprites.pronto || Sprites.pronto(id)) && (!Objetos.ativo || Objetos.pronto());
-      if (!ok && (this.esperou = (this.esperou || 0) + 1) < 200) { setTimeout(espera, 60); return; }
-      this.cena = null; this.pede(); this.pintaIcones(); this.pronto = true;
+      const ok = Object.keys(Sprites.CONJUNTOS).every((id) => Sprites.pronto(id)) && Objetos.pronto();
+      if (!ok && (this.esperou = (this.esperou || 0) + 1) < 400) { setTimeout(espera, 60); return; }
+      this.pronto = true; this.cena = null; this.pede(); this.pintaIcones();
     };
     espera();
   },
@@ -176,7 +177,7 @@ const Ed = {
     for (const l of [16, 17]) G[l].fill('#');
     G[15][2] = '3'; G[15][5] = '1'; G[15][7] = '2';
     for (let l = 13; l <= 15; l++) G[l][27] = G[l][28] = 'S';
-    this.f = { nome: 'Fase nova', grade: G, canais: [], extras: {}, salas: [], dicas: [], trechos: null, roteiro: null, tmax: null, cordas: 1, origem: '' };
+    this.f = { nome: 'Fase nova', grade: G, canais: [], extras: {}, salas: [], dicas: [], trechos: null, roteiro: null, tmax: null, cordas: 1, origem: '', comentarios: [] };
     this.salvaId = null; this.desfaz = []; this.refaz = [];
     this.abriu();
   },
@@ -203,6 +204,7 @@ const Ed = {
       coresCanal: def.coresCanal || null,
       semVolta: (def.semVolta || []).map((q) => Object.assign({}, q, { para: q.para.slice() })), // (idas sem volta de propósito: confereVolta)
       livros: Object.fromEntries((def.livros || []).map(([c, l, cor]) => [`${c},${l}`, cor])), // cor de cada bloco de livro ("c,l": 0-3)
+      comentarios: (def.comentarios || []).map((q) => Object.assign({}, q)), // retângulos com o que o usuário quer mudar (Comentar)
     };
     this.salvaId = salvaId; this.desfaz = []; this.refaz = [];
     this.abriu();
@@ -256,6 +258,7 @@ const Ed = {
     if (f.coresCanal) d.coresCanal = f.coresCanal;
     if (f.semVolta && f.semVolta.length) d.semVolta = f.semVolta;
     if (f.chaoMesa) d.chaoMesa = true;
+    if (f.comentarios && f.comentarios.length) d.comentarios = f.comentarios;
     const livros = Object.entries(f.livros || {}).map(([k, cor]) => [...k.split(',').map(Number), cor]).filter(([c, l]) => f.grade[l] && f.grade[l][c] === 'b');
     if (livros.length) d.livros = livros.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
     return JSON.parse(JSON.stringify(d));
@@ -335,7 +338,7 @@ const Ed = {
   desloca(dc, dl) {
     const f = this.f, dx = dc * TILE, dy = dl * TILE;
     for (const q of [...f.canais, ...(f.carimbos || [])]) { q.c += dc; q.l += dl; }
-    for (const e of f.estantes || []) { e.c0 += dc; e.c1 += dc; e.l0 += dl; e.l1 += dl; }
+    for (const e of [...(f.estantes || []), ...(f.comentarios || [])]) { e.c0 += dc; e.c1 += dc; e.l0 += dl; e.l1 += dl; }
     for (const q of f.semVolta || []) { q.para[0] += dc; q.para[1] += dl; }
     for (const q of f.decoracao || []) { q.x += dx; q.y += dy; }
     f.livros = Object.fromEntries(Object.entries(f.livros || {}).map(([k, cor]) => { const [c, l] = k.split(',').map(Number); return [`${c + dc},${l + dl}`, cor]; }));
@@ -360,6 +363,8 @@ const Ed = {
     this.avisos();
     if (this.mostraSel) this.mostraSel();
     document.getElementById('tam').textContent = `${this.cols} × ${this.lins} blocos`;
+    const nc = (this.f.comentarios || []).length;
+    document.getElementById('b-coment').textContent = nc ? `💬 Enviar comentários (${nc})` : '💬 Enviar comentários';
     if (rascunho) this.guardaRascunho();
     this.pede();
   },
@@ -395,6 +400,11 @@ const Ed = {
     g.fillStyle = '#2a231f';
     g.fillRect(0, 0, this.cv.width, this.cv.height);
     if (!this.f) return;
+    if (!this.pronto) { // a arte da IA ainda chegando: nada do desenho antigo, por código (02/10, usuário)
+      g.fillStyle = '#c9bba6'; g.font = `${Math.round(22 * this.dpr)}px "Patrick Hand", "Comic Sans MS", sans-serif`;
+      g.textAlign = 'center'; g.fillText('Carregando os desenhos...', this.cv.width / 2, this.cv.height / 2);
+      return;
+    }
     if (!this.cena) this.cena = montaCena(this.def);
     // prévia: arrastando ou com a peça na mão, a fase como vai ficar (a cópia mudada)
     const P = this.previa, cena = P ? (P.cena || (P.cena = montaCena(this.paraDef(P.f)))) : this.cena;
@@ -451,6 +461,7 @@ const Ed = {
       g.fillStyle = cor; g.fillRect(c0 * TILE, l0 * TILE, (c1 - c0 + 1) * TILE, (l1 - l0 + 1) * TILE);
       g.strokeStyle = '#ffd23f'; g.lineWidth = 2.5 / z; g.strokeRect(c0 * TILE, l0 * TILE, (c1 - c0 + 1) * TILE, (l1 - l0 + 1) * TILE);
     };
+    this.desenhaComentarios(g, z);
     // estantes: contorno quando a ferramenta da estante está na mão
     if (this.peca === 'estante') {
       g.setLineDash([8 / z, 6 / z]); g.strokeStyle = '#f1bf3a'; g.lineWidth = 2.5 / z;
@@ -458,8 +469,8 @@ const Ed = {
       g.setLineDash([]);
     }
     if (this.peca === 'mover') this.selGuia(g, z); // seleção, alças, o que o clique pega (editor-sel.js)
-    else if (a && (a.tipo === 'ret' || a.tipo === 'sala' || a.tipo === 'estante') && a.fim) {
-      const cor = a.tipo === 'sala' ? 'rgba(59,123,224,0.22)' : a.k === '.' ? 'rgba(226,67,58,0.25)' : 'rgba(255,210,63,0.28)';
+    else if (a && (a.tipo === 'ret' || a.tipo === 'sala' || a.tipo === 'estante' || a.tipo === 'coment') && a.fim) {
+      const cor = a.tipo === 'sala' ? 'rgba(59,123,224,0.22)' : a.tipo === 'coment' || a.k === '.' ? 'rgba(226,67,58,0.25)' : 'rgba(255,210,63,0.28)';
       caixa(Math.min(a.ini.c, a.fim.c), Math.min(a.ini.l, a.fim.l), Math.max(a.ini.c, a.fim.c), Math.max(a.ini.l, a.fim.l), cor);
     } else if (m && m.dentro && !a) {
       if (this.peca === 'S') caixa(Math.min(m.c, this.cols - 2), Math.max(0, m.l - 2), Math.min(m.c, this.cols - 2) + 1, Math.max(0, m.l - 2) + 2, 'rgba(255,210,63,0.28)');
@@ -477,7 +488,7 @@ const Ed = {
       for (const [k, nome] of pecas) {
         const b = document.createElement('button');
         b.className = 'peca'; b.title = `${nome}${k.length === 1 && k !== '.' ? ` — tecla ${k}` : ''}`;
-        const rotulo = k === '.' ? 'apagar' : k === 'mover' ? 'selecionar' : k.startsWith('deco:') ? k.slice(5) : k;
+        const rotulo = k === '.' ? 'apagar' : k === 'mover' ? 'selecionar' : k === 'comentar' ? 'comentar' : k.startsWith('deco:') ? k.slice(5) : k;
         b.innerHTML = `<canvas width="112" height="112"></canvas><span>${rotulo}</span>`;
         b.onclick = () => this.escolhe(k);
         box.appendChild(b);
@@ -540,6 +551,7 @@ const Ed = {
     this.pede();
   },
   pintaIcones() {
+    if (!this.pronto) return; // (os ícones saem com os desenhos da IA, quando chegarem)
     for (const [k, b] of Object.entries(this.botoes)) {
       const cv = b.querySelector('canvas'), g = cv.getContext('2d');
       g.clearRect(0, 0, cv.width, cv.height);
@@ -567,6 +579,14 @@ const Ed = {
           desenhaCena(g, cena, { x0: 0, y0: 0, x1: L, y1: A }, false);
           g.restore();
         } catch (e) { console.warn('ícone', k, e); }
+        continue;
+      }
+      if (k === 'comentar') { // retângulo vermelho tracejado com um balão de fala
+        g.fillStyle = 'rgba(226,67,58,0.22)'; g.fillRect(14, 30, 64, 52);
+        g.setLineDash([7, 5]); g.strokeStyle = '#d93636'; g.lineWidth = 4; g.strokeRect(14, 30, 64, 52); g.setLineDash([]);
+        g.lineWidth = 4; g.strokeStyle = '#2b1f2e'; g.fillStyle = '#fffdf6'; g.lineJoin = 'round';
+        g.beginPath(); g.roundRect(48, 14, 52, 36, 9); g.moveTo(60, 50); g.lineTo(56, 62); g.lineTo(70, 50); g.fill(); g.stroke();
+        g.fillStyle = '#2b1f2e'; for (const x of [62, 74, 86]) { g.beginPath(); g.arc(x, 32, 3.5, 0, U.TAU); g.fill(); }
         continue;
       }
       if (k === '.' || k === 'sala') { // ícones que não são peça: desenho simples
@@ -616,9 +636,18 @@ const Ed = {
       if (e.button === 0 && e.altKey) { if (b.dentro) this.pega(b); return; }
       const apaga = e.button === 2;
       this.previa = null;
+      // o × de um comentário apaga; o número e o texto abrem para mudar (a alça do selecionado, rente ao ×, vem antes)
+      const cb = e.button === 0 && !(this.peca === 'mover' && this.alcaEm(b)) && this.botaoComent(b);
+      if (cb) { if (cb.tipo === 'x') this.apagaComent(cb.i); else this.abreComent(cb.i); this.pede(); return; }
       if (this.peca === 'sala') {
         if (apaga) this.tiraSala(b.wx, b.wy);
         else this.arrasto = { tipo: 'sala', ini: b, fim: b };
+        this.pede();
+        return;
+      }
+      if (this.peca === 'comentar') {
+        if (apaga) { const i = this.comentEm(b.wx, b.wy); if (i >= 0) this.apagaComent(i); }
+        else if (b.dentro) this.arrasto = { tipo: 'coment', ini: b, fim: b };
         this.pede();
         return;
       }
@@ -647,7 +676,7 @@ const Ed = {
       if (!a) { this.previaPinta(b); this.pede(); return; }
       if (a.tipo === 'mao') { this.vista.x = a.vx - (e.clientX - a.x) / this.vista.z; this.vista.y = a.vy - (e.clientY - a.y) / this.vista.z; this.pede(); return; }
       if (a.sel) { this.selMove(b); return; }
-      if (['ret', 'sala', 'estante'].includes(a.tipo)) { a.fim = b; this.pede(); return; }
+      if (['ret', 'sala', 'estante', 'coment'].includes(a.tipo)) { a.fim = b; this.pede(); return; }
       if (a.tipo === 'pinta' && (b.c !== a.ult.c || b.l !== a.ult.l)) {
         const k = a.k === 'S' || '123'.includes(a.k) ? null : a.k; // saída e herói: arrastar move (põe só onde soltou)
         if (k != null ? this.linha(a.ult, b, k) : this.poe(b.c, b.l, a.k)) { a.mudou = true; this.mudou(); }
@@ -662,6 +691,7 @@ const Ed = {
       if (a.tipo === 'ret') { this.foto(); if (this.retangulo(a.ini, a.fim, a.k)) this.mudou(); else this.desfaz.pop(); }
       if (a.tipo === 'sala') this.poeSala(a.ini, a.fim);
       if (a.tipo === 'estante') this.poeEstante(a.ini, a.fim);
+      if (a.tipo === 'coment') this.soltaComent(a.ini, a.fim);
       if (a.sel) this.selUp(a);
       this.gv.style.cursor = this.peca === 'mover' ? 'default' : 'crosshair';
       this.pede();
@@ -696,6 +726,9 @@ const Ed = {
     liga('b-jogar', () => this.jogar(false));
     liga('b-daqui', () => this.jogarDaqui());
     liga('b-ajuda', () => this.ajuda());
+    liga('b-coment', () => this.dialogoEnviar());
+    liga('b-envia', () => this.enviaComentarios());
+    document.querySelector('#dlg-enviar .fecha').onclick = () => document.getElementById('dlg-enviar').close();
     document.querySelector('#dlg-ajuda .fecha').onclick = () => document.getElementById('dlg-ajuda').close();
     liga('b-desfaz', () => this.volta(this.desfaz, this.refaz));
     liga('b-refaz', () => this.volta(this.refaz, this.desfaz));
@@ -824,6 +857,142 @@ const Ed = {
     for (let y = e.l0; y <= e.l1; y++) for (let x = e.c0; x <= e.c1; x++) if (f.grade[y][x] === '#') this._troca(x, y, '.');
     this.mudou();
   },
+  // ------------------------------------------------------------------ comentários (02/10, usuário: "marco a região que
+  // eu quero comentar... aí eu mando enviar e você consegue ler"). Retângulos em blocos, guardados na fase
+  // (def.comentarios: { id, c0, l0, c1, l1, texto, enviado? }); o Enviar manda a fase inteira com eles.
+  comentEm(wx, wy) {
+    const c = Math.floor(wx / TILE), l = Math.floor(wy / TILE);
+    // (o menor que contém o ponto: um comentário dentro de outro continua clicável)
+    let melhor = -1, area = Infinity;
+    (this.f.comentarios || []).forEach((q, i) => {
+      const a = (q.c1 - q.c0 + 1) * (q.l1 - q.l0 + 1);
+      if (c >= q.c0 && c <= q.c1 && l >= q.l0 && l <= q.l1 && a < area) { melhor = i; area = a; }
+    });
+    return melhor;
+  },
+  soltaComent(a, b) {
+    const c0 = U.clamp(Math.min(a.c, b.c), 0, this.cols - 1), c1 = U.clamp(Math.max(a.c, b.c), 0, this.cols - 1);
+    const l0 = U.clamp(Math.min(a.l, b.l), 0, this.lins - 1), l1 = U.clamp(Math.max(a.l, b.l), 0, this.lins - 1);
+    const i = c0 === c1 && l0 === l1 ? this.comentEm(a.wx, a.wy) : -1; // um clique só em cima de um: abre ele
+    if (i >= 0) this.abreComent(i);
+    else this.abreComent(-1, { c0, l0, c1, l1 });
+  },
+  abreComent(i, novo = null) {
+    const dlg = document.getElementById('dlg-coment'), txt = document.getElementById('coment-texto');
+    const q = i >= 0 ? this.f.comentarios[i] : novo;
+    document.getElementById('coment-num').textContent = i >= 0 ? `nº ${i + 1}` : 'novo';
+    document.getElementById('coment-onde').textContent = `Blocos ${q.c0}-${q.c1} (colunas) × ${q.l0}-${q.l1} (linhas)`;
+    txt.value = i >= 0 ? q.texto : '';
+    document.getElementById('coment-apaga').hidden = i < 0;
+    const fecha = () => { dlg.close(); this.pede(); };
+    document.getElementById('coment-ok').onclick = () => {
+      const t = txt.value.trim();
+      if (!t) { txt.focus(); return; }
+      this.foto();
+      if (i >= 0) { Object.assign(this.f.comentarios[i], { texto: t }); delete this.f.comentarios[i].enviado; }
+      else (this.f.comentarios = this.f.comentarios || []).push(Object.assign({ id: `c${Date.now().toString(36)}`, texto: t }, novo));
+      this.mudou(); fecha();
+      this.msg(`Comentário guardado na fase (${this.f.comentarios.length} ao todo). Quando terminar: "Enviar comentários", em cima.`);
+    };
+    document.getElementById('coment-apaga').onclick = () => { this.foto(); this.f.comentarios.splice(i, 1); this.mudou(); fecha(); };
+    document.getElementById('coment-cancela').onclick = fecha;
+    dlg.showModal(); txt.focus();
+  },
+  // botões desenhados em cada comentário (mundo, px): o × apaga, o número e o texto abrem para mudar (qualquer ferramenta)
+  botaoComent(b) {
+    for (const k of (this._comBotoes || []).slice().reverse()) {
+      if (k.tipo === 'x' ? Math.hypot(b.wx - k.x, b.wy - k.y) <= k.r * 1.25 : b.wx >= k.x0 && b.wx <= k.x1 && b.wy >= k.y0 && b.wy <= k.y1) return k;
+    }
+    return null;
+  },
+  apagaComent(i) {
+    this.foto(); this.f.comentarios.splice(i, 1);
+    if (this.sel && this.sel.tipo === 'coment') this.sel = null;
+    this.mudou(); this.mostraSel();
+    this.msg('Comentário apagado (Ctrl+Z desfaz).');
+  },
+  desenhaComentarios(g, z) {
+    const cs = ((this.previa && this.previa.f) || this.f).comentarios || []; // (arrastando um comentário: ele vai junto)
+    this._comBotoes = [];
+    if (!cs.length) return;
+    const ativo = this.peca === 'comentar';
+    cs.forEach((q, i) => {
+      const x = q.c0 * TILE, y = q.l0 * TILE, w = (q.c1 - q.c0 + 1) * TILE, h = (q.l1 - q.l0 + 1) * TILE;
+      g.fillStyle = ativo ? 'rgba(226,52,52,0.22)' : 'rgba(226,52,52,0.14)'; g.fillRect(x, y, w, h);
+      g.strokeStyle = '#d93636'; g.lineWidth = 3 / z; g.setLineDash(q.enviado ? [] : [10 / z, 6 / z]); g.strokeRect(x, y, w, h); g.setLineDash([]);
+      // número (verde com ✓ depois de enviado) e o começo do texto, no canto do retângulo
+      const r = 13 / z;
+      g.beginPath(); g.arc(x + r, y + r, r, 0, U.TAU); g.fillStyle = q.enviado ? '#3fb56a' : '#d93636'; g.fill();
+      g.fillStyle = '#fffdf6'; g.font = `${15 / z}px ${FONTE_TITULO}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(q.enviado ? '✓' : String(i + 1), x + r, y + r + 1 / z);
+      // × no outro canto: apaga
+      const xx = x + w - r - 3 / z, xy = y + r + 3 / z, s = r * 0.42;
+      g.beginPath(); g.arc(xx, xy, r, 0, U.TAU); g.fillStyle = '#fffdf6'; g.fill();
+      g.strokeStyle = '#d93636'; g.lineWidth = 2 / z; g.stroke();
+      g.lineWidth = 3 / z; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(xx - s, xy - s); g.lineTo(xx + s, xy + s); g.moveTo(xx + s, xy - s); g.lineTo(xx - s, xy + s); g.stroke();
+      g.lineCap = 'butt';
+      this._comBotoes.push({ tipo: 'x', i, x: xx, y: xy, r }, { tipo: 'abre', i, x0: x, y0: y, x1: x + 2 * r, y1: y + 2 * r });
+      g.font = `${15 / z}px ${FONTE_FALA}`; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+      const max = Math.max(w - 4 * r, 160 / z), linhas = [];
+      let lin = '';
+      for (const p of q.texto.split(/\s+/)) {
+        const t = lin ? `${lin} ${p}` : p;
+        if (g.measureText(t).width > max && lin) { linhas.push(lin); lin = p; } else lin = t;
+        if (linhas.length === 3) break;
+      }
+      if (lin && linhas.length < 3) linhas.push(lin);
+      const lh = 18 / z, bw = Math.max(...linhas.map((t) => g.measureText(t).width)) + 12 / z, by = y + 2 * r + 4 / z;
+      g.fillStyle = 'rgba(255,253,246,0.92)'; g.fillRect(x + 4 / z, by, bw, linhas.length * lh + 6 / z);
+      g.fillStyle = '#7a1f1f'; linhas.forEach((t, j) => g.fillText(t, x + 10 / z, by + (j + 1) * lh - 2 / z));
+      this._comBotoes.push({ tipo: 'abre', i, x0: x + 4 / z, y0: by, x1: x + 4 / z + bw, y1: by + linhas.length * lh + 6 / z });
+    });
+  },
+  dialogoEnviar() {
+    const cs = this.f.comentarios || [], dlg = document.getElementById('dlg-enviar'), ol = document.getElementById('lista-coment');
+    if (!cs.length) { this.escolhe('comentar'); this.msg('Nenhum comentário ainda: com "comentar" na mão (já está), arraste um retângulo na fase e escreva.'); return; }
+    ol.innerHTML = '';
+    cs.forEach((q, i) => {
+      const li = document.createElement('li'), t = document.createElement('span'); t.textContent = q.texto;
+      const sm = document.createElement('small'); sm.textContent = ` — blocos ${q.c0}-${q.c1} × ${q.l0}-${q.l1}${q.enviado ? ' (já enviado)' : ''}`;
+      const x = document.createElement('button'); x.className = 'apaga-coment'; x.textContent = '🗑'; x.title = 'Apagar este comentário';
+      x.onclick = () => { this.apagaComent(i); if ((this.f.comentarios || []).length) this.dialogoEnviar(); else dlg.close(); };
+      li.append(t, sm, x); ol.appendChild(li);
+    });
+    document.getElementById('b-apaga-todos').onclick = () => {
+      this.foto(); this.f.comentarios = []; this.sel = null; this.mudou(); this.mostraSel(); dlg.close();
+      this.msg('Comentários apagados (Ctrl+Z desfaz).');
+    };
+    document.getElementById('envio-res').textContent = '';
+    if (!dlg.open) dlg.showModal();
+  },
+  async enviaComentarios() {
+    const res = document.getElementById('envio-res'), quando = new Date().toISOString(), id = this.salvaId || slug(this.f.nome);
+    const pacote = { fase: this.f.nome, id, quando, comentarios: (this.f.comentarios || []).map((q, i) => Object.assign({ n: i + 1,
+      px: { x0: q.c0 * TILE, y0: q.l0 * TILE, x1: (q.c1 + 1) * TILE, y1: (q.l1 + 1) * TILE } }, q)), def: this.paraDef() };
+    const ok = (onde) => {
+      this.foto(); for (const q of this.f.comentarios) q.enviado = quando; this.mudou();
+      res.textContent = `Enviado ${onde}. Agora é só avisar na conversa: "mandei os comentários".`;
+      this.msg(`Comentários enviados ${onde}.`);
+    };
+    res.textContent = 'Enviando...';
+    // 1) no PC: o servidor do jogo grava fases/comentarios/<fase>-<quando>.json
+    try {
+      const r = await fetch(`api/comentarios?nome=${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pacote, null, 1) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) { ok(`para ${j.arquivo}`); return; }
+    } catch (e) { /* sem o servidor do PC */ }
+    // 2) no link do claude.ai: o banco de dados do link (o Claude lê de lá)
+    try {
+      const db = window.claude && typeof claude.use === 'function' ? await claude.use('db') : null;
+      if (db) { await db.collection('comentarios').add(pacote); ok('pelo link do claude.ai'); return; }
+    } catch (e) { console.warn('comentários: banco do link', e); }
+    // 3) sem nenhum dos dois: o pacote vai para a área de transferência, para colar na conversa
+    const txt = JSON.stringify(pacote);
+    try { await navigator.clipboard.writeText(txt); ok('para a área de transferência: cole na conversa'); }
+    catch (e) { res.textContent = 'Não consegui enviar nem copiar: use Abrir → Copiar JSON (os comentários vão junto com a fase).'; }
+  },
+
   poeSala(a, b) {
     const c0 = U.clamp(Math.min(a.c, b.c), 0, this.cols - 1), c1 = U.clamp(Math.max(a.c, b.c), 0, this.cols - 1);
     const l0 = U.clamp(Math.min(a.l, b.l), 0, this.lins - 1), l1 = U.clamp(Math.max(a.l, b.l), 0, this.lins - 1);

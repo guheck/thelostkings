@@ -77,7 +77,9 @@ Object.assign(Ed, {
       if (k !== '.' && TERRENO.includes(k)) return { tipo: 'bloco', k, r: retTerreno(f, b.c, b.l) };
     }
     const di = this.decoEm(b.wx, b.wy);
-    return di >= 0 ? { tipo: 'deco', i: di } : null;
+    if (di >= 0) return { tipo: 'deco', i: di };
+    const ci = this.comentEm(b.wx, b.wy); // comentário: onde não tem outra coisa dentro dele
+    return ci >= 0 ? { tipo: 'coment', i: ci } : null;
   },
   retItem(it, f = this.f) {
     if (it.tipo === 'peca') {
@@ -85,6 +87,7 @@ Object.assign(Ed, {
       return { c0: Math.min(...xs), c1: Math.max(...xs), l0: Math.min(...ys), l1: Math.max(...ys) };
     }
     if (it.tipo === 'estante') { const e = f.estantes[it.i]; return { c0: e.c0, c1: e.c1, l0: e.l0, l1: e.l1 }; }
+    if (it.tipo === 'coment') { const q = f.comentarios[it.i]; return { c0: q.c0, c1: q.c1, l0: q.l0, l1: q.l1 }; }
     return it.r;
   },
   // caixa no mundo (px)
@@ -103,6 +106,7 @@ Object.assign(Ed, {
     if (!it) return false;
     if (it.tipo === 'estante') return !!(f.estantes || [])[it.i];
     if (it.tipo === 'deco') return !!(f.decoracao || [])[it.i];
+    if (it.tipo === 'coment') return !!(f.comentarios || [])[it.i];
     if (it.tipo === 'peca') return it.tiles.every(([c, l]) => this.dentro(c, l) && f.grade[l][c] === it.k);
     return true;
   },
@@ -112,12 +116,13 @@ Object.assign(Ed, {
     if (it.tipo === 'bloco') return `${(TIPOS_BLOCO.find((t) => t[0] === it.k) || [, nomeCurto(NOME_PECA[it.k])])[1]} ${tam}`;
     if (it.tipo === 'estante') return `Estante ${tam}`;
     if (it.tipo === 'deco') return `Enfeite: ${f.decoracao[it.i].p} (${f.decoracao[it.i].a} px)`;
+    if (it.tipo === 'coment') return `Comentário nº ${it.i + 1}`;
     return `Área ${tam}`;
   },
   // dá para mudar o tamanho? 'ret' (8 alças: canto e lado) ou 'canto' (o enfeite: cresce por igual)
   estica(it) {
     if (it.tipo === 'deco') return 'canto';
-    if (it.tipo === 'bloco' || it.tipo === 'estante' || it.tipo === 'area') return 'ret';
+    if (it.tipo === 'bloco' || it.tipo === 'estante' || it.tipo === 'area' || it.tipo === 'coment') return 'ret';
     return it.tipo === 'peca' && 'HGPLXYZ'.includes(it.k) ? 'ret' : null;
   },
   // o que está dentro da estante e o que está em pé em cima dela (a alavanca) vai junto
@@ -143,6 +148,12 @@ Object.assign(Ed, {
       if (ok) Object.assign(e, desloca(e, dc, dl));
       return { f, ok, sel: it };
     }
+    if (it.tipo === 'coment') { // só o retângulo anda (não leva nada da fase)
+      const q = f.comentarios[it.i], r = desloca(q, dc, dl);
+      const ok = r.c0 >= 0 && r.l0 >= 0 && r.c1 < this.cols && r.l1 < this.lins;
+      if (ok) { Object.assign(q, r); delete q.enviado; }
+      return { f, ok, sel: it };
+    }
     if (it.tipo === 'area') {
       const r = it.r, t = [];
       for (let l = r.l0; l <= r.l1; l++) for (let c = r.c0; c <= r.c1; c++) t.push([c, l]);
@@ -166,6 +177,7 @@ Object.assign(Ed, {
     if (it.tipo === 'area') return { f: this.f, ok: true, sel: { tipo: 'area', r: r2 }, semMudar: true };
     const f = copiaFase(this.f);
     if (it.tipo === 'estante') { this.refazEstante(f, it.i, r2); return { f, ok: true, sel: it }; }
+    if (it.tipo === 'coment') { const q = f.comentarios[it.i]; Object.assign(q, r2); delete q.enviado; return { f, ok: true, sel: it }; }
     const r = this.retItem(it), k = it.k, canal = it.tipo === 'peca' ? f.canais.find((q) => noRet(r, q.c, q.l) && f.grade[q.l][q.c] === k) : null;
     // (livro: o pedaço novo de cada fileira fica da cor dela; as fileiras novas, da de cima ou da de baixo)
     const corDe = (l) => (f.livros || {})[`${r.c0},${U.clamp(l, r.l0, r.l1)}`];
@@ -220,6 +232,7 @@ Object.assign(Ed, {
     return r;
   },
   apagaItem(it) {
+    if (it.tipo === 'coment') { this.apagaComent(it.i); return; }
     const f = copiaFase(this.f);
     if (it.tipo === 'deco') f.decoracao.splice(it.i, 1);
     else if (it.tipo === 'peca') for (const [c, l] of it.tiles) limpaBloco(f, c, l);
@@ -249,6 +262,7 @@ Object.assign(Ed, {
   // ------------------------------------------------------------------ copiar e colar
   copia(it = this.sel) {
     if (!it) return false;
+    if (it.tipo === 'coment') { this.msg('Comentário não se copia: arraste um novo com o comentar.'); return false; }
     const f = this.f;
     if (it.tipo === 'deco') { this.prancheta = { deco: Object.assign({}, f.decoracao[it.i]) }; return true; }
     const ret = this.retItem(it), r = it.tipo === 'estante' && ret.l0 > 0 ? Object.assign({}, ret, { l0: ret.l0 - 1 }) : ret;
@@ -425,7 +439,7 @@ Object.assign(Ed, {
   // com a peça de pintar (ou um enfeite) na mão: a fase como fica se clicar aqui
   previaPinta(b) {
     const k = this.peca;
-    if (k === 'mover' || k === 'sala' || k === 'estante' || this.modoDaqui || !b.dentro) { this.previa = null; return; }
+    if (k === 'mover' || k === 'sala' || k === 'estante' || k === 'comentar' || this.modoDaqui || !b.dentro) { this.previa = null; return; }
     if (k.startsWith('deco:')) {
       const x = Math.round(b.wx / 10) * 10, chave = `${k}|${x}|${b.l}`;
       if (this.previa && this.previa.chave === chave) return;
@@ -454,7 +468,7 @@ Object.assign(Ed, {
     const it = this.sel && this.itemValido(this.sel) ? this.sel : null;
     if (e.key === 'Escape' && (it || this.modoDaqui)) { this.sel = null; this.modoDaqui = false; this.mostraSel(); this.pede(); return true; }
     if (!it) return false;
-    if (ctrl && k === 'c') { this.copia(it); this.msg('Copiado: ponha o mouse onde quer e Ctrl+V.'); return true; }
+    if (ctrl && k === 'c') { if (this.copia(it)) this.msg('Copiado: ponha o mouse onde quer e Ctrl+V.'); return true; }
     if (ctrl && k === 'd') { this.duplica(it); return true; }
     if (ctrl) return false;
     if (e.key === 'Delete' || e.key === 'Backspace') { this.apagaItem(it); return true; }
@@ -603,7 +617,7 @@ Object.assign(Ed, {
     const p = (txt) => { const e = document.createElement('p'); e.textContent = txt; box.appendChild(e); return e; };
     if (!it) {
       p(this.peca === 'mover'
-        ? 'Nada. Clique numa peça, num bloco (a prateleira inteira), na estante ou num enfeite. Arraste no vazio para pegar uma área.'
+        ? 'Nada. Clique numa peça, num bloco (a prateleira inteira), na estante, num enfeite ou num comentário. Arraste no vazio para pegar uma área.'
         : 'Com uma peça na mão, a fase mostra onde ela vai ficar antes do clique. Esc volta para Selecionar.');
       return;
     }
@@ -710,6 +724,14 @@ Object.assign(Ed, {
       }));
       numero('Altura (px)', d.a, 30, 700, (v) => this.aplica((g) => { g.decoracao[it.i].a = v; }), 10);
       marca('Virado (espelho)', d.e, () => this.vira(it));
+    } else if (it.tipo === 'coment') {
+      const q = f.comentarios[it.i];
+      p(`Blocos ${q.c0}-${q.c1} × ${q.l0}-${q.l1}${q.enviado ? ' (já enviado)' : ''}. Arraste para mudar de lugar; as alças mudam o tamanho.`);
+      const t = document.createElement('textarea'); t.value = q.texto; t.rows = 4; t.style.width = '100%';
+      t.onchange = () => { const v = t.value.trim(); if (v) this.aplica((g) => { g.comentarios[it.i].texto = v; delete g.comentarios[it.i].enviado; }); };
+      box.appendChild(t);
+      botao(linha(), 'Apagar comentário', () => this.apagaComent(it.i), 'Delete');
+      return;
     } else {
       const r = it.r;
       p(`${r.c1 - r.c0 + 1} × ${r.l1 - r.l0 + 1} blocos. Arraste para levar tudo (cobre o que estiver lá); as alças mudam a área.`);

@@ -10,7 +10,9 @@ const CFG = {
 };
 // Arremesso do Marreta: o gancho (↓ + E) manda o amigo para o alto (passa mureta); o soco reto (E) manda longe e
 // baixo (passa por baixo de teto baixo). Fiapo: gancho sobe ~205 px e vai ~450 px; reto sobe ~87 px e vai ~510 px.
-const ARREMESSO = { fiapo: { vx: 520, vy: -950 }, pudim: { vx: 320, vy: -720 } };
+// Pudim: gancho sobe ~138 px (02/10: na trena da Mesa nova o Marreta joga ele do degrau na boca do duto, 120 px acima;
+// com -720 subia 118 e não chegava; o pulo dele, 46 px, nem chega perto)
+const ARREMESSO = { fiapo: { vx: 520, vy: -950 }, pudim: { vx: 320, vy: -780 } };
 const ARREMESSO_RETO = { fiapo: { vx: 900, vy: -620 }, pudim: { vx: 640, vy: -500 } };
 // Tempo dos golpes (s): quando acerta, quando acaba, quanto o mundo para no impacto e quanto a tela treme.
 // O que dá peso: antecipação segurada (ele agacha e espera), golpe rapidíssimo, impacto parado (o mundo congela).
@@ -164,6 +166,7 @@ class Heroi {
         this.noChao = false; this.apoio = null;
         this.muda('ar');
         M.som && M.som('pulo', { id: this.id });
+        M.poeira && M.poeira(this.x, this.y, { n: 3, forca: 0.6 });
       }
       if (E.acao) this._acao(M, E);
     }
@@ -177,6 +180,15 @@ class Heroi {
       this.boneco.passo(dt, [], GRAV / ESC, pv);
     }
     if (this.noChao && Math.abs(this.vx) > 10) this.fase += Math.abs(this.vx) * dt * 0.055;
+    // poeira dos pés (acabamento, 02/10): correndo, para trás a cada 0,11 s; freando embalado (soltou ou virou), na frente
+    if (M.poeira && this.noChao && this.estado === 'chao' && !this.apoio) {
+      this.tPoeira = (this.tPoeira || 0) - dt;
+      const s = Math.sign(this.vx), freia = Math.abs(this.vx) > 260 && alvo * this.vx <= 0;
+      if (this.tPoeira <= 0 && (freia || (this.correndo && Math.abs(this.vx) > 300))) {
+        M.poeira(this.x + s * this.cfg.w * (freia ? 0.4 : -0.4), this.y, { n: 1, dir: freia ? s : -s, forca: 0.65 });
+        this.tPoeira = freia ? 0.07 : 0.11;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -240,6 +252,7 @@ class Heroi {
       this.soltos = this.boneco ? this._pontosBoneco() : null;
       this.boneco = null;
       M.fx('POF!', this.x, this.y - 20, '#e8d6b4');
+      M.poeira && M.poeira(this.x, this.y, { n: 6, forca: 1.1 });
       return;
     }
     if (this.estado === 'bundada') {
@@ -248,6 +261,7 @@ class Heroi {
       let rasgou = false;
       for (let c = c0; c <= c1; c++) if (n.tile(c, l) === 'F') rasgou = n.quebra(c, l) || rasgou;
       M.tremer(rasgou ? 10 : 7);
+      if (M.poeira) M.poeira(this.x, this.y, { n: rasgou ? 6 : 10, forca: 1.5 }); // a bundada levanta o pó todo
       if (rasgou) { this.noChao = false; this.muda('ar'); M.fx('RASG!', this.x, this.y - 10, '#9bd46a'); return; }
       this.squash = 0.5;
       M.fx('POF!', this.x, this.y - 10, '#f2c230');
@@ -258,7 +272,12 @@ class Heroi {
     if (this.estado === 'ar') {
       this.muda('chao');
       if (vel > 700) this.squash = 0.25;
+      else if (vel > 420) this.squash = Math.max(this.squash, 0.12); // (pouso pequeno também afunda um pouco)
       if (vel > 650 && M.som) M.som('pousa', { id: this.id });
+      // poeira do pouso, pelo peso de cada um: o Pudim levanta mais (e a tela sente quando ele cai de alto)
+      const peso = { pudim: 1.25, marreta: 1, fiapo: 0.85 }[this.id] || 1;
+      if (vel > 380 && M.poeira) M.poeira(this.x, this.y, { n: vel > 900 ? 6 : 4, forca: U.clamp(vel / 1000, 0.55, 1.3) * peso });
+      if (this.id === 'pudim' && vel > 850) M.tremer(3);
     }
   }
 
@@ -639,6 +658,12 @@ class Heroi {
     if (this.noChao && (E.acao || this.tParado > 0.2) && this._desenrola(M)) { this._fisica(dt, M); return; }
     this._fisica(dt, M);
     this.giro += this.vx * dt / (BOLA.h / 2);
+    // a bola embalada deixa um rastro de pó
+    this.tPoeira = (this.tPoeira || 0) - dt;
+    if (M.poeira && this.noChao && Math.abs(this.vx) > 300 && this.tPoeira <= 0) {
+      M.poeira(this.x - Math.sign(this.vx) * BOLA.w * 0.35, this.y, { n: 1, dir: -Math.sign(this.vx), forca: 0.7 });
+      this.tPoeira = 0.08;
+    }
   }
 
   // Área da luva do golpe no mundo (GOLPES.luva), do meio do corpo até a ponta da luva
@@ -880,7 +905,9 @@ function moveX(h, n, dt) {
     // subindo a rampa: o meio dos pés ainda está nela e a frente do corpo já passa por cima do bloco onde ela acaba
     if (h.noChao && n.inclinacao(h.x, h.y) === s && topo >= h.y - w / 2 - 4 && !bloqueado(n, c, topo - hh + 4, topo - 2)) { h.x = nx; empurraDurex(h, n); empurraEstojo(h, n); return; }
     h.x = s > 0 ? c * TILE - w / 2 - 0.01 : (c + 1) * TILE + w / 2 + 0.01;
-    h.vx = 0;
+    // arremessado e ainda subindo: raspa na parede sem perder o embalo e, passando da quina, segue por cima (02/10: o
+    // Pudim jogado na boca do duto da trena batia na quina e caía de volta, se não estivesse no lugar exato)
+    if (!(h.estado === 'arremessado' && h.vy < 0)) h.vx = 0;
     if (h instanceof Heroi && h.noChao && travaAlto(h, n, c)) h.trava = s;
     return;
   }

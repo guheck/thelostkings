@@ -1,0 +1,3 @@
+// Tamanho LÓGICO de cada quadro (px das medidas do animacoes.js): a imagem é menor, na resolução nativa
+// (tools/nativo_sprites.py). Gerado: não editar à mão.
+Sprites.tamanhos('blindado', {"anda2": [165, 182], "anda3": [163, 182], "cai1": [217, 156], "clang1": [168, 208], "derrotado1": [214, 196], "empurra1": [198, 175], "olha1": [162, 182], "parado1": [146, 182]});

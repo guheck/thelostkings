@@ -5,8 +5,8 @@
 //    o jogo abriria o editor);
 // 2) já guarda na instalação as páginas, o código e as fases da demo (__ARQUIVOS__, a lista que o tools/monta_dist.js
 //    põe aqui); as imagens entram quando o jogo as carrega (ele carrega todas ao abrir).
-// O publicar.ps1 troca 2026.10.02-0019 pela versão: cada versão nova apaga o cache antigo.
-const VERSAO = '2026.10.02-0019';
+// O publicar.ps1 troca 2026.10.03-0155 pela versão: cada versão nova apaga o cache antigo.
+const VERSAO = '2026.10.03-0155';
 // vários jogos podem morar no mesmo site (ex.: guheck.github.io/jogo-a e /jogo-b): o nome do cache leva o endereço do jogo
 const PREFIXO = `jogo:${self.registration.scope}:`;
 const CACHE = PREFIXO + VERSAO;

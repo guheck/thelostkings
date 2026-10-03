@@ -42,6 +42,8 @@ const ENCOSTA = new Set(['parado', 'espera', 'anda', 'empurra', 'freia', 'aterri
 const FAIXA = 10;
 // quem encosta a mão no que empurra: a mão fica na face em TODO quadro (o corpo é que mexe um pouco), não só no mais comprido
 const POR_QUADRO = new Set(['empurra']);
+// heróis com os quadros de parado e festa inteiros em assets/<id>/menu/ (o menu desenha grande: Sprites.desenhaAnim)
+const MENU_INTEIRO = new Set(['pudim', 'marreta', 'fiapo']);
 const Sprites = {
   ativo: false,
   // escala = unidades do esqueleto por pixel da folha original; px/py = ponto de encaixe (junta) na folha original;
@@ -183,14 +185,23 @@ const Sprites = {
       // as do RITMO e as só do personagem (amassado, nocauteado... dos inimigos não estão no RITMO)
       for (const n of new Set([...Object.keys(RITMO), ...Object.keys(r)])) C.ritmo[n] = Object.assign({}, RITMO[n], r[n]);
       if (C.esqueleto) { Cast[id].pVetor = Cast[id].p; Cast[id].p = C.esqueleto; }
-      this._conta(id, 1); // o manifesto das animações (ele chama Sprites.anims() antes do onload)
-      this._carrega(id, [...Object.values(C.pecas || {}).map((q) => q[0]), ...Object.values(C.caretas || {}), ...(C.bola ? [C.bola[0]] : [])], true);
-      const s = document.createElement('script');
-      s.src = `${C.pasta}animacoes.js`;
-      s.onload = s.onerror = () => this._conta(id, -1);
-      document.head.appendChild(s);
+      // primeiro o tamanho LÓGICO dos quadros (assets/<id>/tamanhos.js, tools/nativo_sprites.py: as imagens estão na
+      // resolução nativa, menores que as medidas do animacoes.js); depois as imagens e o manifesto das animações (ele
+      // chama Sprites.anims() antes do onload)
+      this._conta(id, 1);
+      const t = document.createElement('script');
+      t.src = `${C.pasta}tamanhos.js`;
+      t.onload = t.onerror = () => {
+        this._carrega(id, [...Object.values(C.pecas || {}).map((q) => q[0]), ...Object.values(C.caretas || {}), ...(C.bola ? [C.bola[0]] : [])], true);
+        const s = document.createElement('script');
+        s.src = `${C.pasta}animacoes.js`;
+        s.onload = s.onerror = () => this._conta(id, -1);
+        document.head.appendChild(s);
+      };
+      document.head.appendChild(t);
     }
   },
+  tamanhos(id, t) { if (this.CONJUNTOS[id]) this.CONJUNTOS[id].tam = t; },
   pronto(id) { return this.ativo && !!this.prontos[id]; },
 
   _conta(id, k) {
@@ -207,7 +218,11 @@ const Sprites = {
       this.imgs[chave] = {};
       this._conta(id, 1);
       const img = new Image();
-      img.onload = () => { this.imgs[chave] = { img, escura: escura ? this._escurece(img) : img }; this._conta(id, -1); };
+      img.onload = () => {
+        const t = C.tam && C.tam[n]; // (na resolução nativa: o tamanho lógico no lugar do da imagem)
+        if (t) U.altaRes(img, t[0], t[1]);
+        this.imgs[chave] = { img, escura: escura ? this._escurece(img) : img }; this._conta(id, -1);
+      };
       img.onerror = () => { console.warn(`sprite faltando: ${img.src}`); this._conta(id, -1); };
       img.src = `${C.pasta}${n}.png`;
     }
@@ -241,6 +256,8 @@ const Sprites = {
     C.alturaMassa = ref && ref.quadros[0].my != null ? this._mediana(ref.quadros.map((q) => (q.py - q.my) * ref.s)) : C.alturaCentro;
     C.alturaCabeca = ref && ref.quadros[0].hy != null ? this._mediana(ref.quadros.map((q) => (q.py - q.hy) * ref.s)) : C.alturaCentro;
     this._carrega(id, Object.values(A).flatMap((a) => a.quadros.map((q) => q.img)), false);
+    // o menu desenha os heróis 1,74x maiores: lá vão os quadros inteiros de parado e festa (tools/nativo_sprites.py)
+    if (C.tam && MENU_INTEIRO.has(id)) this._carrega(id, ['parado', 'festa'].flatMap((n) => (A[n] ? A[n].quadros.map((q) => `menu/${q.img}`) : [])), false);
   },
   _mediana(v) { const o = [...v].sort((a, b) => a - b); return o.length ? o[o.length >> 1] : 0; },
   _tempo(r, j) { return r.tempos[Math.min(j, r.tempos.length - 1)]; },
@@ -525,12 +542,11 @@ const Sprites = {
 
   _img(id, nome, escura) { const q = this.imgs[`${id}:${nome}`]; return q && (escura ? q.escura : q.img); },
 
-  // cópia mais escura (membros do lado de trás), feita uma vez
+  // cópia mais escura (membros do lado de trás), feita uma vez (na resolução da imagem: U.tela)
   _escurece(img) {
-    const c = document.createElement('canvas');
-    c.width = img.width; c.height = img.height;
-    const g = c.getContext('2d');
+    const { c, g } = U.tela(U.lw(img), U.lh(img), img._rx || 1, img._ry || 1);
     g.drawImage(img, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = 'rgba(40,20,50,0.22)';
     g.fillRect(0, 0, c.width, c.height);
@@ -540,7 +556,7 @@ const Sprites = {
   // desenha a imagem com o ponto (px, py) da folha original na origem
   _peca(ctx, id, nome, px, py, escura) {
     const im = this._img(id, nome, escura), C = this.CONJUNTOS[id], s = C.escala, k = s / C.fator;
-    if (im) ctx.drawImage(im, -px * s, -py * s, im.width * k, im.height * k);
+    if (im) ctx.drawImage(im, -px * s, -py * s, U.lw(im) * k, U.lh(im) * k);
   },
 
   // false = não tem caretas: fica a cabeça por código
@@ -570,7 +586,7 @@ const Sprites = {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(esc, esc);
-    this.quadro(ctx, id, { anim: a, i: this._noTempo(a, t) }, { f, pe: { x: 0, y: 0 } });
+    this.quadro(ctx, id, { anim: a, i: this._noTempo(a, t), menu: true }, { f, pe: { x: 0, y: 0 } });
     ctx.restore();
     return true;
   },
@@ -583,7 +599,8 @@ const Sprites = {
 
   // Quadro inteiro (de Sprites.escolhe): o pé no chão do personagem, ou o meio do corpo (voando, girando)
   quadro(ctx, id, Q, st) {
-    const C = this.CONJUNTOS[id], a = Q.anim, q = a.quadros[Q.i], s = a.s, k = s / a.fator, im = this._img(id, q.img);
+    const C = this.CONJUNTOS[id], a = Q.anim, q = a.quadros[Q.i], s = a.s, k = s / a.fator;
+    const im = (Q.menu && this._img(id, `menu/${q.img}`)) || this._img(id, q.img); // (no menu: o quadro inteiro, se tem)
     const [kx, ky] = this._ancora(C, a, Q), f = st.f || 1, solto = ky === 'cy' || ky === 'my' || ky === 'hy';
     const ax = q[kx] ?? q.px, ay = q[ky] ?? q.py; // folhas antigas não têm os pontos novos
     let y = st.pe.y + (Q.dy || 0) + (a.r.afunda || 0) * s;
@@ -595,7 +612,7 @@ const Sprites = {
     if (Q.gira) ctx.rotate(Q.gira);
     ctx.scale(q.espelho ? -f : f, 1);
     ctx.imageSmoothingQuality = 'high';
-    if (im) ctx.drawImage(im, -ax * s, -ay * s, im.width * k, im.height * k);
+    if (im) ctx.drawImage(im, -ax * s, -ay * s, U.lw(im) * k, U.lh(im) * k);
     ctx.restore();
     if (st.amarrado) { // corda amarrada na barriga (é daí que ela sai: Cordas.ponto)
       const cx = st.pe.x + f * 2, cy = st.pe.y - 42;
@@ -615,7 +632,7 @@ const Sprites = {
       ctx.translate((M.pelve.x + M.peito.x) / 2, (M.pelve.y + M.peito.y) / 2);
       ctx.rotate(st.giro);
       ctx.scale(f * esc, esc);
-      if (im) ctx.drawImage(im, -bx * bs, -by * bs, im.width * k, im.height * k);
+      if (im) ctx.drawImage(im, -bx * bs, -by * bs, U.lw(im) * k, U.lh(im) * k);
       ctx.restore();
       return true;
     }

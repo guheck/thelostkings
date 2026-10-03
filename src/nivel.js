@@ -29,11 +29,18 @@
 //   I  i  pilar da frente (lápis / marca-texto; no bloco logo acima do chão): sobe até o primeiro teto, como se o
 //         segurasse; fica no plano da frente (os heróis passam por trás) e não é sólido
 const TILE = 40, COLS = 32, LINS = 18; // tamanho padrão (salas do tutorial)
-// Profundidade no tampo do chão (FAIXA_CHAO), em px acima da linha da frente. Os heróis pisam na frente (pé da frente na
-// linha, o de trás uns 8 px acima): é a pista. Portão e porta ficam em pé na pista (PROF.pista); a saída, um pouco atrás
-// dela, com o tapete na frente (PROF.saida); a decoração fica no plano de trás (DECO). (30/09, usuário: a régua e a
-// porta "furando o chão", a saída "mais para trás".)
-const PROF = { pista: 6, saida: 16 };
+// Profundidade no tampo do chão (FAIXA_CHAO), em px acima da linha da frente. Portão e porta ficam em pé na pista
+// (PROF.pista); a saída, um pouco atrás dela, com o tapete na frente (PROF.saida); a decoração fica no plano de trás
+// (DECO). (30/09, usuário: a régua e a porta "furando o chão", a saída "mais para trás".)
+// PROF.pisa (02/10, estudo pilar-pista.png; usuário: "jogar os heróis, os inimigos e todos os objetos interativos...
+// mais pra cima da plataforma, meio que no centro do piso"): tudo o que se mexe ou que se usa é DESENHADO 10 px para
+// dentro do tampo — heróis, inimigos, sombras, poeira, cordas e tachinhas, escadas, poças, controles, chaves, gangorra,
+// post-it, durex, trena, bandeirinha, saída. Com o pé na beirada, o pilar da frente parecia estar no mesmo plano deles
+// ("dá a impressão que ele vai trombar"). Só o desenho: a física e as caixas não mudam. O que é encaixado no mapa fica:
+// blocos, faixa, lápis do chão, livros, estante e livro-portão, portão, porta, parede fraca, papel — o estojo de zíper,
+// que é como o papelão (a tampa atrás dos pés; no fosso vira chão: subindo, mostrava os lápis embaixo) — e o carimbo,
+// pendurado no teto (subindo, o corpo lá em cima passava por cima da laje; 03/10, usuário: "ele já estava certo").
+const PROF = { pista: 6, saida: 16, pisa: 10 };
 // Decoração no plano de trás (30/09, usuário: "tem que ficar mais para trás, numa coloração diferente, meio
 // esfumaçado, para indicar que não é interativo"): com névoa (a cor do céu por cima, DECO.nevoa), o pé escondido atrás
 // do tampo (a base DECO.afunda px abaixo da linha do chão: a faixa e a laje, desenhadas depois, cobrem) e andando um
@@ -43,9 +50,9 @@ const DECO = { nevoa: 0.45, afunda: 24, paralaxe: 0.9, deriva: 64 }; // deriva: 
 // Pilar da frente (I/i, Nivel.desenhaFrente): em pé na beira da frente do tampo (o pé PILAR.pe px abaixo da linha do
 // chão: está na frente da pista; o lápis, cravado: Objetos.pilar); o topo encosta embaixo do teto. Escurecido (na
 // frente, fora da luz: como o lápis do estudo de arte). atras: a transparência com o herói ativo atrás dele.
-// encaixe: o topo entra na cara da frente do papelão de cima (o pilar aperta a laje; 01/10, estudo de variantes: em par,
-// nas duas pontas de uma prateleira solta, com o topo encaixado, ele parece segurar de verdade)
-const PILAR = { pe: 4, meiaLarg: 30, atras: 0.5, escuro: 0.28, encaixe: 14 };
+// O topo entra na laje de cima (PILAR_PECA.entra em objetos.js; 01/10, estudo de variantes: em par, nas duas pontas de
+// uma prateleira solta, ele parece segurar de verdade; 02/10: desenhado por cima da cara da frente dela parecia colado)
+const PILAR = { pe: 4, meiaLarg: 30, atras: 0.5, escuro: 0.28 };
 const CORES_CHAVE = { x: '#e0443a', y: '#3b7be0', z: '#f1bf3a' };
 const NOME_COR = { x: 'vermelha', y: 'azul', z: 'amarela' };
 const ESPECIES = { g: 'guarda', e: 'escudeiro', o: 'borracha', q: 'grampeador', Q: 'grampeador', j: 'lixeira', u: 'tesoureiro', a: 'blindado' };
@@ -154,7 +161,10 @@ class Estojo {
     }
     const noChaoAntes = this.noChao, yAntes = this.y;
     moveY(this, n, dt);
-    if (this.noChao && !noChaoAntes && this.y - yAntes >= 0 && this.vyAntes > 300) { M.tremer(6); M.fx('PUF!', this.x, this.y - 20, '#e8d6b4', 0.8); M.registra(`estojo caiu x=${Math.round(this.x)}`); }
+    if (this.noChao && !noChaoAntes && this.y - yAntes >= 0 && this.vyAntes > 300) {
+      M.tremer(6); M.fx('PUF!', this.x, this.y - 20, '#e8d6b4', 0.8); M.registra(`estojo caiu x=${Math.round(this.x)}`);
+      for (const s of [-1, 1]) M.poeira && M.poeira(this.x + s * (ESTOJO.w / 2 - 6), this.y - ESTOJO.h + 10, { n: 4, dir: s, forca: 1.3 });
+    }
   }
   // de pé em cima? (piso para heróis e inimigos)
   topo() { return this.y - ESTOJO.h; }
@@ -259,7 +269,10 @@ class Carimbo {
   atualiza(dt, M) {
     this.tAntes = this.t; this.t = M.t;
     const d = this.descida(this.t);
-    if (d >= 1 && !this.carimbou) { this.carimbou = this.marcou = true; M.fx('TUM!', this.x, this.chao - 30, '#e9c77a', 0.8); M.tremer(3); }
+    if (d >= 1 && !this.carimbou) {
+      this.carimbou = this.marcou = true; M.fx('TUM!', this.x, this.chao - 30, '#e9c77a', 0.8); M.tremer(3);
+      for (const s of [-1, 1]) M.poeira && M.poeira(this.x + s * (CARIMBO.w / 2 - 8), this.chao, { n: 3, dir: s, forca: 1.1 }); // o pó espirra dos lados
+    }
     if (d < 1) this.carimbou = false;
     // em cima dele quando sobe: a cabeça bate no teto — espremido
     const y0 = this.caixa().y0;
@@ -733,6 +746,7 @@ class Nivel {
     }
 
     // poças de cola e de corretivo: uma por fileira de blocos iguais, deitada no chão (desenhada no primeiro bloco dela)
+    g.save(); g.translate(0, -PROF.pisa); // (debaixo dos pés: para dentro do tampo, como quem pisa nelas)
     for (let l = 0; l < this.lins; l++) for (let c = c0; c <= c1; c++) {
       const t = this.grade[l][c];
       if ((t !== 'k' && t !== 'w') || (c > c0 && this.grade[l][c - 1] === t)) continue;
@@ -743,14 +757,17 @@ class Nivel {
       const lado = !this.solido(b + 1, l) ? 1 : !this.solido(a - 1, l) ? -1 : 0;
       if (!(comObjetos() && Objetos.poca(g, t, a * TILE, (l + 1) * TILE, b - a + 1, lado))) Nivel.desenhaPoca(g, t, a * TILE, (l + 1) * TILE, (b - a + 1) * TILE);
     }
+    g.restore();
     for (let l = 0; l < this.lins; l++) for (let c = c0; c <= c1; c++) {
       const r = this.rampa(c, l);
       if (r && dentro(c * TILE, l * TILE, (c + 1) * TILE, (l + 1) * TILE)) Cenario.rampa(g, c * TILE, l * TILE, r, !this.solido(c + (r > 0 ? 1 : -1), l));
     }
     this._faixas(g, c0, c1, dentro, 'rampa');
     this._faixas(g, c0, c1, dentro, 'linha');
+    g.save(); g.translate(0, -PROF.pisa); // tachinhas e escadas: onde os heróis pisam (PROF.pisa)
     for (const p of this.pinos) if (dentro(p.x - 20, p.y - 40, p.x + 20, p.y)) Cenario.tachinha(g, p.x, p.y);
     for (const L of this.escadas) if (dentro(L.x - L.w / 2, L.yTopo - 40, L.x + L.w / 2, L.yBase)) Nivel.desenhaEscada(g, L);
+    g.restore();
     this._decoracao(g, 'frente', dentro);
   }
 
@@ -920,6 +937,7 @@ class Nivel {
   desenhaVivo(ctx, t, naSaida, v) {
     const dentro = (x0, y0, x1, y1) => x1 >= v.x0 - 60 && x0 <= v.x1 + 60 && y1 >= v.y0 - 100 && y0 <= v.y1 + 60;
     const todosDentro = naSaida.every(Boolean);
+    ctx.save(); ctx.translate(0, -PROF.pisa); // o que se usa fica onde os heróis pisam (PROF.pisa); portões e portas, não
     for (const p of this.pontos) if (dentro(p.x - 30, p.y - 110, p.x + 60, p.y)) Nivel.desenhaPonto(ctx, p, t);
     // saída: portinha de castelo, com o tapete da chegada na frente e uma coroinha acesa para cada um que chegou
     const s = this.saida;
@@ -978,6 +996,7 @@ class Nivel {
         Estilo.forma(ctx, (c) => U.retRed(c, k.x - 18, k.y - 14, 36, 14, 4), { cor: '#8e8a96' }, { elev: 1.5, linha: 2.5 });
       }
     }
+    ctx.restore();
     // portões (régua da cor do canal que sobe) e portas trancadas (afundam no chão)
     for (const g of this.portoes) {
       const x0 = g.c * TILE, y0 = g.l0 * TILE, h = (g.l1 - g.l0) * TILE;
@@ -1019,6 +1038,7 @@ class Nivel {
       ctx.restore();
     }
     // chaves (paradas balançando ou na mão de alguém) e rolos de barbante
+    ctx.save(); ctx.translate(0, -PROF.pisa);
     for (const k of this.chaves) {
       if (k.usada || !dentro(k.x - 30, k.y - 30, k.x + 30, k.y + 30)) continue;
       Nivel.desenhaChave(ctx, k.x, k.y + (k.portador ? 0 : Math.sin(t * 3 + k.x) * 4), CORES_CHAVE[k.cor], k.portador ? 0.75 : 1, t);
@@ -1031,9 +1051,13 @@ class Nivel {
     for (const g of this.gangorras) {
       if (dentro(g.x - 200, g.chao - 140, g.x + 200, g.chao) && !(comObjetos() && Objetos.gangorra(ctx, g))) Nivel.desenhaGangorra(ctx, g);
     }
+    // o carimbo, não (03/10, usuário: "ele já estava certo, já estava caindo no lugar certo"): pendurado no teto, subindo
+    // junto o corpo lá em cima passava por cima da laje
+    ctx.restore();
     for (const k of this.carimbos) {
       if (dentro(k.x - 70, k.teto, k.x + 70, k.chao) && !(comObjetos() && Objetos.carimbo(ctx, k))) Nivel.desenhaCarimbo(ctx, k);
     }
+    ctx.save(); ctx.translate(0, -PROF.pisa);
     for (const p of this.postits) {
       if (p.estado === 'fora' || !dentro(p.x - 60, p.y - 100, p.x + 60, p.y + 400)) continue;
       // treme preso pela cola (o canto de cima), solta, gira e cai sumindo; pisca de volta
@@ -1049,6 +1073,7 @@ class Nivel {
       if (dentro(r.x - 50, r.y - 80, r.x + 50, r.y) && !(comObjetos() && Objetos.durex && Objetos.durex(ctx, r))) Nivel.desenhaDurex(ctx, r);
     }
     for (const r of this.trenas) if (dentro(r.x - r.L - 60, r.topo - 20, r.x + r.L + 60, r.chao + 40) && !(comObjetos() && Objetos.trena(ctx, r))) Nivel.desenhaTrena(ctx, r);
+    ctx.restore();
     // (o estojo de zíper vai depois dos inimigos: desenhaEstojos — a estocada do lápis bate na face dele, não atravessa)
     // papelão rachado e folha de papel
     const c0 = Math.max(0, Math.floor(v.x0 / TILE) - 1), c1 = Math.min(this.cols - 1, Math.ceil(v.x1 / TILE) + 1);

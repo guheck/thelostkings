@@ -1,12 +1,53 @@
 'use strict';
 
+// RESOLUÇÃO NATIVA (03/10, usuário: "a gente precisa definir no projeto de forma bem clara qual que é a resolução nativa
+// do jogo e realizar todos os assets já com isso em mente, sem isso de redimensionar"): a tela do jogo tem sempre
+// 1920 x 1080 px (NATIVA); o mundo é 1280 x 720 px do jogo (Jogo.W x Jogo.H), então 1 px do jogo = ARTE_RES = 1,5 px da
+// tela. A janela só estica a tela pronta, por igual. Toda arte é preparada para aparecer em 1:1 na tela nativa (1 px da
+// imagem = 1 px da tela): nunca ampliada (fica mole) e, se possível, sem redução no jogo. Conferência:
+// Jogo.confereResolucao() lista o que aparece ampliado.
+const NATIVA = { w: 1920, h: 1080 }, ARTE_RES = 1.5;
+// Peça em alta (tools/recorta_nativo.py): a imagem tem mais pixels que o tamanho LÓGICO (o px das medidas do código, o do
+// recorte antigo). U.altaRes marca a imagem com o tamanho lógico (width/height passam a dizer ele) e o drawImage
+// desenha a grande no lugar dela: o recorte (sx, sy, sw, sh) vai em px lógicos e sem tamanho vai o lógico. Canvas
+// montado de uma peça em alta: U.tela(lw, lh, rx, ry) (desenhe em px lógicos).
+const _desenhaImg = CanvasRenderingContext2D.prototype.drawImage;
+CanvasRenderingContext2D.prototype.drawImage = function (img, a, b, c, d, e, f, g, h) {
+  const rx = img && img._rx;
+  if (U.medeArte) U.medeArte(this, img, arguments);
+  if (!rx) return _desenhaImg.apply(this, arguments);
+  const n = arguments.length;
+  if (n === 3) return _desenhaImg.call(this, img, a, b, img._lw, img._lh);
+  if (n === 5) return _desenhaImg.call(this, img, a, b, c, d);
+  return _desenhaImg.call(this, img, a * rx, b * img._ry, c * rx, d * img._ry, e, f, g, h);
+};
+
 // Utilidades gerais (matemática, sorteio com semente, ruído)
 const U = {
+  // imagem img (carregada) com tamanho lógico lw x lh: width/height dizem o lógico; a grande vai no drawImage
+  altaRes(img, lw, lh) {
+    const nw = img.naturalWidth || img.width, nh = img.naturalHeight || img.height;
+    Object.assign(img, { _rx: nw / lw, _ry: nh / lh, _lw: lw, _lh: lh });
+    if (img instanceof HTMLImageElement) { img.width = lw; img.height = lh; }
+    return img;
+  },
+  // canvas para montar peça em alta: rx x ry px por px lógico; o contexto já vem escalado (desenhe em px lógicos)
+  tela(lw, lh, rx = ARTE_RES, ry = rx) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(lw * rx)); c.height = Math.max(1, Math.ceil(lh * ry));
+    Object.assign(c, { _rx: c.width / lw, _ry: c.height / lh, _lw: lw, _lh: lh });
+    const g = c.getContext('2d'); g.scale(c._rx, c._ry);
+    return { c, g };
+  },
+  // tamanho lógico de uma imagem ou de um canvas montado (U.tela): para medir em px do jogo
+  lw: (img) => img._lw || img.width,
+  lh: (img) => img._lh || img.height,
   // Parâmetros de teste (?sprite, ?fase=...): da URL, ou de window.PARAMETROS_JOGO na página (a página publicada
   // não recebe a parte ?... do link)
   params() { return new URLSearchParams(window.PARAMETROS_JOGO ?? location.search); },
-  // Desenhos da IA (personagens, inimigos, cenário, fundo): o padrão desde 29/09; ?codigo volta o desenho por código
-  arteIA() { return !U.params().has('codigo'); },
+  // Desenhos da IA (personagens, inimigos, cenário, fundo): sempre (02/10, usuário: "quero tirar completamente essa
+  // arte vetorial antiga"; até então ?codigo voltava o desenho por código)
+  arteIA() { return true; },
   TAU: Math.PI * 2,
   clamp: (v, a, b) => (v < a ? a : v > b ? b : v),
   lerp: (a, b, t) => a + (b - a) * t,

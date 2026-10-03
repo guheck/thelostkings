@@ -1,0 +1,3 @@
+// Tamanho LÓGICO de cada quadro (px das medidas do animacoes.js): a imagem é menor, na resolução nativa
+// (tools/nativo_sprites.py). Gerado: não editar à mão.
+Sprites.tamanhos('borracha', {"amassado1": [214, 61], "anda1": [186, 113], "anda2": [181, 111], "anda3": [186, 110], "anda4": [186, 114], "anda5": [177, 116], "anda6": [177, 117], "anda7": [177, 117], "anda8": [177, 112], "derrotado1": [164, 117], "freia1": [143, 110], "quica1": [170, 92]});

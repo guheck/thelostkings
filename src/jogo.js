@@ -3,6 +3,14 @@
 // Mundo = a simulação de uma fase (sem tela). Jogo = entrada, câmera, desenho, HUD, menu e a sequência de fases.
 const ORDEM = ['marreta', 'fiapo', 'pudim'];
 const HABIL = { marreta: 'E: soco · ↓+E: gancho', fiapo: 'E: corda', pudim: 'E: rola · no ar: bundada' };
+// Acabamento (02/10, usuário: "falta alguma polida... pra as coisas se casarem"): poeira dos pés (Mundo.poeira),
+// sombra no chão de todo mundo — também no ar, mais fraca e menor quanto mais alto — e o clima da tela (névoa leve na
+// paisagem, que fica para trás, e vinheta nos cantos). ?crua desliga tudo (para comparar antes e depois).
+// A sombra fica na faixa, logo atrás dos pés (recua): é ali que os pés pisam (na linha da frente ela sumia na madeira).
+const POEIRA = { max: 90, cor: '#f6ecd6', linha: '#b49e7e' };
+const SOMBRA = { alfa: 0.5, alto: 320, achata: 0.24, recua: 3 };
+// (no quarto: a paisagem lá fora atrás do vidro, mais clara; a parede com névoa quente, de luz de dentro de casa)
+const CLIMA = { nevoa: 'rgba(226, 242, 244, 0.22)', vidro: 'rgba(232, 244, 248, 0.2)', quarto: 'rgba(250, 242, 228, 0.24)', vinheta: 0.22 };
 const TECLAS = {
   ArrowLeft: 'esq', KeyA: 'esq', ArrowRight: 'dir', KeyD: 'dir', ArrowUp: 'cima', KeyW: 'cima', ArrowDown: 'baixo', KeyS: 'baixo',
   Space: 'pulo', KeyE: 'acao', Enter: 'acao', NumpadEnter: 'acao', Tab: 'troca', KeyQ: 'troca', KeyR: 'reinicia', KeyN: 'nova',
@@ -43,6 +51,7 @@ class Mundo {
     this.ativo = 0;
     this.estado = 'jogando';
     this.efeitos = [];
+    this.particulas = []; // poeira (Mundo.poeira)
     this.sacode = 0;
     this.parada = 0; // golpe forte: o mundo congela um instante no impacto (como nos jogos de luta)
     this.t = opts.t || 0;
@@ -67,6 +76,18 @@ class Mundo {
     this.registra(texto);
     if (this.somAtivo && typeof Som !== 'undefined') this.som(Som.porTexto(texto));
   }
+  // Poeira de papelão (02/10, acabamento — usuário: "falta alguma polida... pequenos efeitos"): bolinhas que saem dos pés
+  // e somem crescendo (pulo, pouso, corrida, freada, bundada, carimbo, estojo caindo). Só no mundo da tela (as simulações
+  // do robô não desenham). o: n bolinhas, forca (tamanho e velocidade), dir (1/-1: só para esse lado; 0: os dois)
+  poeira(x, y, o = {}) {
+    if (this.rapido || (typeof Jogo !== 'undefined' && !Jogo.polida) || this.particulas.length > POEIRA.max) return;
+    const n = o.n || 4, k = o.forca || 1, dir = o.dir || 0;
+    for (let i = 0; i < n; i++) {
+      const lado = dir || (i % 2 ? 1 : -1), a = Math.random(), b = Math.random();
+      this.particulas.push({ x: x + lado * (3 + a * 10 * k), y: y - 3 - b * 4, vx: lado * (50 + a * 110) * k, vy: -(15 + b * 55) * k,
+        r0: (4 + a * 3) * k, r1: (10 + b * 7) * k, t0: this.t, dur: 0.32 + b * 0.22 });
+    }
+  }
   // som (src/som.js): só no mundo que está na tela (as simulações do robô ficam mudas)
   som(nome, o) { if (this.somAtivo && nome && typeof Som !== 'undefined') Som.toca(nome, o); }
   tremer(q) { this.sacode = Math.max(this.sacode, q); }
@@ -77,6 +98,7 @@ class Mundo {
     if (this.parada > 0) { this.parada -= dt; return; } // impacto: tudo parado (o robô também espera)
     this.t += dt;
     this.tSala += dt;
+    if (this.particulas.length) this.particulas = this.particulas.filter((p) => this.t - p.t0 < p.dur);
     if (this.bot) E = this.bot.passo(this, dt);
     if (this.estado === 'jogando') {
       if (E.troca) this.seleciona((this.ativo + 1) % 3);
@@ -381,6 +403,7 @@ const Jogo = {
   W: 1280, H: 720, PASSO: 1 / 120,
   idx: 0, m: null, def: null, t: 0, acum: 0, modo: 'menu',
   teclas: {}, bordas: {}, cache: null, cortina: null, intro: 1, recorde: 0, semente: 1, salva: true,
+  polida: typeof location === 'undefined' || !new URLSearchParams(location.search).has('crua'), // acabamento (POEIRA, SOMBRA, CLIMA)
   cam: { x: 0, y: 0, z: 1 }, mapa: false,
 
   // Sai do menu e começa a jogar a fase i
@@ -520,23 +543,35 @@ const Jogo = {
 
   // ---------------------------------------------------------------------------
   _fundo() {
-    const n = this.m.nivel;
-    const bw = this.W + Math.max(0, n.largura - this.W) * 0.2 + 40, bh = this.H + Math.max(0, n.altura - this.H) * 0.2 + 40;
-    const c = document.createElement('canvas');
-    c.width = Math.ceil(bw * this.escala); c.height = Math.ceil(bh * this.escala);
-    const g = c.getContext('2d');
-    g.setTransform(this.escala, 0, 0, this.escala, 0, 0);
+    const n = this.m.nivel, quarto = this.polida; // (o quarto: a parede com janela e estantes na frente da paisagem)
+    const tela = (w, h) => {
+      const c = document.createElement('canvas'); c.width = Math.ceil(w * this.escala); c.height = Math.ceil(h * this.escala);
+      c._nativa = true; // (montado na resolução da tela: a conferência de resolução mede o que vai nele)
+      const g = c.getContext('2d'); g.setTransform(this.escala, 0, 0, this.escala, 0, 0); return [c, g];
+    };
+    const p = quarto ? QUARTO.longe : 0.2, dx = Math.max(0, n.largura - this.W), dy = Math.max(0, n.altura - this.H);
+    const bw = this.W + dx * p + 40, bh = this.H + dy * p + 40;
+    const [c, g] = tela(bw, bh);
     const [c1, c2, c3] = Cenario.coresColina(), f1 = 1.0 + this.m.def.nome.length;
+    // no quarto, a crista do meio cai a 55% da altura do vidro com a câmera no meio da fase (a paisagem e a parede
+    // andam em velocidades diferentes: subindo e descendo, o horizonte passeia pela janela)
+    const pw = this.W + dx * 0.2 + 40, ph = this.H + dy * 0.2 + 40, plano = quarto && Cenario.planoQuarto(pw, ph);
+    const meio = plano ? plano.jt + 0.55 * plano.jh - 0.08 * dy * 0.5 : bh - 240;
     Cenario.ceu(g, bw, bh); // (o sol vai em Jogo.desenha: quase parado na tela, como um sol de verdade)
-    Cenario.colina(g, bw, bh, bh - 300, 26, 0.006, f1, c1, 2);
-    Cenario.enfeites(g, bw, bh - 300, 26, 0.006, f1, 11, 50, ['arvore1', 'arvore2', 'arvores'], 230);
-    for (let x = 700; x < bw; x += 1400) Cenario.castelo(g, x, bh - 290, 0.55);
-    Cenario.colina(g, bw, bh, bh - 240, 22, 0.009, 2.2, c2, 3);
-    Cenario.enfeites(g, bw, bh - 240, 22, 0.009, 2.2, 23, 86, ['arvore1', 'arvores', 'arvore2', 'arbusto1', 'arbustos'], 300);
-    Cenario.colina(g, bw, bh, bh - 160, 16, 0.012, 4.0, c3, 4);
-    Cenario.enfeites(g, bw, bh - 160, 16, 0.012, 4.0, 37, 46, ['arbusto1', 'arbusto2', 'arbustos', 'tufo'], 220);
+    Cenario.colina(g, bw, bh, meio - 60, 26, 0.006, f1, c1, 2);
+    Cenario.enfeites(g, bw, meio - 60, 26, 0.006, f1, 11, 50, ['arvore1', 'arvore2', 'arvores'], 230);
+    for (let x = 700; x < bw; x += 1400) Cenario.castelo(g, x, meio - 50, 0.55);
+    Cenario.colina(g, bw, bh, meio, 22, 0.009, 2.2, c2, 3);
+    Cenario.enfeites(g, bw, meio, 22, 0.009, 2.2, 23, 86, ['arvore1', 'arvores', 'arvore2', 'arbusto1', 'arbustos'], 300);
+    Cenario.colina(g, bw, bh, meio + 80, 16, 0.012, 4.0, c3, 4);
+    Cenario.enfeites(g, bw, meio + 80, 16, 0.012, 4.0, 37, 46, ['arbusto1', 'arbusto2', 'arbustos', 'tufo'], 220);
     // (as nuvens saíram da paisagem: ficam no plano da frente, Jogo._nuvens)
-    return { c, bw, bh, nuvens: this._nuvens() };
+    if (!quarto) return { c, bw, bh, nuvens: this._nuvens() };
+    // a parede (a 0,2 da câmera) com os vidros furados; o sol lá fora, onde a 1ª janela fica com a câmera no meio da fase
+    const [parede, pg] = tela(pw, ph);
+    const v0 = Cenario.quarto(pg, pw, ph)[0];
+    Cenario.sol(g, v0.x1 - 110 - dx * 0.04, Math.max(70, meio - 190), 40, 0);
+    return { c, bw, bh, parede, pw, ph, nuvens: this._nuvens() };
   },
 
   // Nuvens no plano da frente (30/09, usuário: "ficariam mais legais se viessem para frente", "mais em cima, no lugar
@@ -588,17 +623,25 @@ const Jogo = {
     ctx.fillStyle = '#b8e0dc';
     ctx.fillRect(0, 0, W, H);
     const f = this.cache.fundo;
-    if (z > 0.9) { // paralaxe: o fundo anda mais devagar (as nuvens com ele)
+    if (z > 0.9 && f.parede) { // o quarto: a paisagem pela janela (mais longe, mais devagar), a parede, a névoa
+      const cx = Math.max(0, cam.x), cy = Math.max(0, cam.y);
+      ctx.drawImage(f.c, -cx * QUARTO.longe, -cy * QUARTO.longe - 20, f.bw, f.bh);
+      ctx.fillStyle = CLIMA.vidro; ctx.fillRect(0, 0, W, H); // (lá fora, atrás do vidro)
+      ctx.drawImage(f.parede, -cx * 0.2, -cy * 0.2 - 20, f.pw, f.ph);
+      ctx.fillStyle = CLIMA.quarto; ctx.fillRect(0, 0, W, H); // a parede um pouco para trás
+    } else if (z > 0.9) { // paralaxe: o fundo anda mais devagar (as nuvens com ele)
       const ox = -Math.max(0, cam.x) * 0.2, oy = -Math.max(0, cam.y) * 0.2 - 20;
       ctx.drawImage(f.c, ox, oy, f.bw, f.bh);
+      if (this.polida) { ctx.fillStyle = CLIMA.nevoa; ctx.fillRect(0, 0, W, H); } // a paisagem um pouco para trás
       // o sol, longe de tudo, quase não anda: fica no canto de cima em qualquer andar (preso à paisagem, numa fase alta
       // como a Mesa ele sumia lá embaixo ou aparecia no meio da tela lá em cima)
       Cenario.sol(ctx, W - 130 - Math.max(0, cam.x) * 0.02, 130 - Math.max(0, cam.y) * 0.01, 40, 0);
     }
-    else { // no mapa: a paisagem cobrindo a tela, com um véu claro por cima para a fase aparecer (29/09: era uma cor lisa)
-      const s = Math.max(W / f.bw, H / f.bh);
-      ctx.drawImage(f.c, (W - f.bw * s) / 2, H - f.bh * s, f.bw * s, f.bh * s);
-      Cenario.sol(ctx, W - 130, 130, 40, 0);
+    else { // no mapa: a paisagem (ou o quarto) cobrindo a tela, com um véu claro por cima para a fase aparecer
+      const F = f.parede ? { c: f.parede, w: f.pw, h: f.ph } : { c: f.c, w: f.bw, h: f.bh }, s = Math.max(W / F.w, H / F.h);
+      if (f.parede) ctx.drawImage(f.c, (W - f.bw * s) / 2, H - f.bh * s, f.bw * s, f.bh * s);
+      ctx.drawImage(F.c, (W - F.w * s) / 2, H - F.h * s, F.w * s, F.h * s);
+      if (!f.parede) Cenario.sol(ctx, W - 130, 130, 40, 0);
       ctx.fillStyle = 'rgba(236, 246, 244, 0.42)'; ctx.fillRect(0, 0, W, H);
     }
     if (m.sacode > 0) ctx.translate((Math.random() - 0.5) * m.sacode, (Math.random() - 0.5) * m.sacode);
@@ -606,10 +649,16 @@ const Jogo = {
     ctx.translate(-cam.x, -cam.y);
     const v = { x0: cam.x, y0: cam.y, x1: cam.x + W / z, y1: cam.y + H / z, par: z > 0.95 }; // par: com paralaxe
     if (z < 0.95) this._fixoMapa(ctx, n); else n.desenhaFixo(ctx, v);
+    // tudo o que se mexe é desenhado PROF.pisa px para dentro do tampo (02/10; o desenhaVivo escolhe o que vai junto)
+    ctx.save(); ctx.translate(0, -PROF.pisa);
+    if (this.polida && z > 0.95) this._sombras(ctx, m, n, v); // no chão, por baixo de tudo o que se mexe
+    ctx.restore();
     n.desenhaVivo(ctx, t, m.herois.map((h) => !!h.dentro), v);
+    ctx.save(); ctx.translate(0, -PROF.pisa);
     m.cordas.desenha(ctx);
     for (const o of m.inimigos) if (o.x > v.x0 - 120 && o.x < v.x1 + 120) o.desenha(ctx, m.t); // tempo do mundo (bloqueou, empurrou...)
-    n.desenhaEstojos(ctx, v);
+    // o estojo, não: é como o papelão (a tampa dele é desenhada atrás dos pés, como a faixa) e no fosso vira chão
+    ctx.restore(); n.desenhaEstojos(ctx, v); ctx.save(); ctx.translate(0, -PROF.pisa);
     for (const g of m.grampos) desenhaGrampo(ctx, g);
     for (const b of m.bolinhas) desenhaBolinha(ctx, b);
 
@@ -619,12 +668,14 @@ const Jogo = {
       const h = m.herois[i];
       if (h.pisca > 0 && Math.floor(h.pisca * 12) % 2) continue;
       const V = h.visual(t, n);
-      if (!V.mole && h.noChao) Desenho.sombraChao(ctx, h.x + ((V.quadro && V.quadro.dx) || 0), h.y + 2, h.cfg.w * 0.9);
+      if (!this.polida && !V.mole && h.noChao) Desenho.sombraChao(ctx, h.x + ((V.quadro && V.quadro.dx) || 0), h.y + 2, h.cfg.w * 0.9);
       const st = Object.assign({ f: h.f, t, rosto: V.rosto, escala: ESC, pesPlanos: !V.mole && !V.giro, giro: V.giro ? h.giro : null,
         quadro: V.quadro || null, pe: { x: h.x, y: h.y }, squash: h.squash * 0.35, amarrado: m.cordas.usaHeroi(h) && h.id === 'pudim' },
         V.extra, h.id === 'fiapo' ? { semRolo: m.cordas.estoque <= 0 } : {});
       Desenho.personagem(ctx, h.ch, V.M, st);
     }
+    if (this.polida) this._poeira(ctx, m); // na frente dos pés
+    ctx.restore();
     n.desenhaFrente(ctx, v, m.estado === 'jogando' && !this.mapa ? m.heroi : null); // pilares: os heróis passam por trás
     // plano da frente: as nuvens (por cima do jogo, por baixo da seta, das falas e dos efeitos)
     if (v.par) {
@@ -634,7 +685,8 @@ const Jogo = {
         if (x > v.x0 - 200 && x < v.x1 + 200 && y > v.y0 - 120 && y < v.y1 + 120) Cenario.nuvem(ctx, x, y, q.s, t, q.fase, v.y0 - 10, q.tipo);
       }
     }
-    // no mapa: marcadores grandes em cima de cada um, da chave e da saída
+    // no mapa: marcadores grandes em cima de cada um, da chave e da saída (e a seta do ativo: junto deles, PROF.pisa)
+    ctx.save(); ctx.translate(0, -PROF.pisa);
     if (this.mapa) {
       const r = 18 / z;
       const marca = (x, y, txt, cor) => {
@@ -666,6 +718,7 @@ const Jogo = {
         ctx.restore();
       }
     }
+    ctx.restore();
     // efeitos de texto (o golpe forte leva uma estrela de impacto atrás: estoura grande e encolhe)
     for (const e of m.efeitos) {
       const p = (m.t - e.t0) / e.dur;
@@ -690,10 +743,11 @@ const Jogo = {
     for (const h of m.herois) {
       if (!h.fala) continue;
       const k = U.ease.outBack(U.prog(h.fala.t, 0, 0.18)) * (1 - U.ease.in(U.prog(h.fala.t, h.fala.dur - 0.12, h.fala.dur)));
-      const x = U.clamp(h.x + 30, v.x0 + 90, v.x1 - 90), y = Math.max(v.y0 + 60, h.y - h.cfg.h - 26);
+      const x = U.clamp(h.x + 30, v.x0 + 90, v.x1 - 90), y = Math.max(v.y0 + 60, h.y - PROF.pisa - h.cfg.h - 26);
       Cenario.balao(ctx, x, y, h.fala.texto, { k, tam: 22, lado: 1 });
     }
     ctx.restore();
+    if (this.polida && !this.mapa) ctx.drawImage(this._acab().vinheta, 0, 0, W, H);
     this._foraDaTela(ctx);
     this.hud(ctx);
     Toque.desenha(ctx, this);
@@ -705,6 +759,77 @@ const Jogo = {
       ctx.restore();
     }
     if (this.cortina) this.desenhaCortina(ctx, (t - this.cortina.t0) / 1.0);
+  },
+
+  // Acabamento: os desenhos dele feitos uma vez (sombra, bolinha de pó, vinheta) — nada de gradiente por quadro
+  _acab() {
+    if (this._acabC) return this._acabC;
+    // (na resolução nativa ou acima: a sombra e a poeira chegam a ~3x o tamanho do desenho na tela; U.tela)
+    const tela = (w, h, r = 2) => U.tela(w, h, r).c;
+    const sombra = tela(128, 32, 3), gs = sombra.getContext('2d');
+    gs.scale(1, 0.25);
+    const rg = gs.createRadialGradient(64, 64, 0, 64, 64, 64);
+    rg.addColorStop(0, 'rgba(48,28,20,1)'); rg.addColorStop(0.6, 'rgba(48,28,20,0.75)'); rg.addColorStop(1, 'rgba(48,28,20,0)');
+    gs.fillStyle = rg; gs.fillRect(0, 0, 128, 128);
+    const puff = tela(48, 48), gp = puff.getContext('2d');
+    gp.beginPath(); gp.arc(24, 24, 20, 0, U.TAU); gp.fillStyle = POEIRA.cor; gp.fill();
+    gp.lineWidth = 3; gp.strokeStyle = POEIRA.linha; gp.stroke();
+    gp.beginPath(); gp.arc(18, 17, 7, 0, U.TAU); gp.fillStyle = 'rgba(255,255,255,0.7)'; gp.fill(); // brilho
+    const vinheta = tela(this.W, this.H, ARTE_RES), gv = vinheta.getContext('2d');
+    const rv = gv.createRadialGradient(this.W / 2, this.H / 2, this.H * 0.42, this.W / 2, this.H / 2, this.H * 1.02);
+    rv.addColorStop(0, 'rgba(40,24,16,0)'); rv.addColorStop(1, `rgba(40,24,16,${CLIMA.vinheta})`);
+    gv.fillStyle = rv; gv.fillRect(0, 0, this.W, this.H);
+    return (this._acabC = { sombra, puff, vinheta });
+  },
+  // o chão embaixo de (x, y): bloco, rampa ou plataforma (gangorra, post-it, carimbo, trena), até SOMBRA.alto abaixo
+  _chaoEmbaixo(n, x, y) {
+    const c = Math.floor(x / TILE);
+    let chao = null;
+    for (let l = Math.max(0, Math.floor(y / TILE)); l <= Math.min(n.lins - 1, Math.floor((y + SOMBRA.alto) / TILE)); l++) {
+      if (n.rampa(c, l)) { const yr = n.chaoRampa(c, l, x); if (yr >= y - 1) { chao = yr; break; } }
+      if (n.solido(c, l) && l * TILE >= y - 1) { chao = l * TILE; break; }
+    }
+    for (const p of n.plataformas()) { const s = p.superficie(x); if (s != null && s >= y - 1 && (chao == null || s < chao)) chao = s; }
+    return chao;
+  },
+  // Sombras no chão: heróis (no ar também, fracas e pequenas pelo tanto de altura), inimigos, estojo, durex e carimbo
+  // (a sombra dele cresce e escurece enquanto desce: avisa que ele vem)
+  _sombras(ctx, m, n, v) {
+    const S = this._acab().sombra, A = SOMBRA;
+    const poe = (x, fy, rx, a) => {
+      if (fy == null || a <= 0.02 || x + rx < v.x0 || x - rx > v.x1 || fy < v.y0 - 10 || fy > v.y1 + 30) return;
+      ctx.globalAlpha = Math.min(1, a);
+      ctx.drawImage(S, x - rx, fy - A.recua - rx * A.achata, rx * 2, rx * 2 * A.achata);
+    };
+    const corpo = (x, y, noChao, w, forca = 1) => {
+      const fy = noChao ? y : this._chaoEmbaixo(n, x, y);
+      if (fy == null) return;
+      const k = U.clamp(1 - (fy - y) / A.alto, 0, 1);
+      poe(x, fy, w * (0.5 + 0.35 * k), A.alfa * forca * k);
+    };
+    ctx.save();
+    for (const h of m.herois) {
+      if (h.estado === 'machucado' || h.estado === 'caido' && !h.noChao) continue;
+      const bola = h.estado === 'rolando', apoiado = h.noChao && !h.apoio;
+      corpo(h.x, h.y, apoiado, bola ? BOLA.w : h.cfg.w);
+    }
+    for (const o of m.inimigos) if (o.vivo && o.x > v.x0 - 100 && o.x < v.x1 + 100) corpo(o.x, o.y, o.noChao, o.cfg.w);
+    for (const e of n.estojos) corpo(e.x, e.y + PROF.pisa, e.noChao, ESTOJO.w * 0.8, 0.8); // (o estojo não sobe: PROF.pisa)
+    for (const r of n.durex) corpo(r.x, r.y, r.noChao, DUREX.w, 0.9);
+    for (const k of n.carimbos) { const d = k.descida(k.t); poe(k.x, k.chao + PROF.pisa, CARIMBO.w * (0.38 + 0.12 * d), A.alfa * (0.2 + 0.7 * d)); } // (o carimbo não sobe: PROF.pisa)
+    ctx.restore();
+  },
+  _poeira(ctx, m) {
+    if (!m.particulas.length) return;
+    const P = this._acab().puff;
+    ctx.save();
+    for (const p of m.particulas) {
+      const u = (m.t - p.t0) / p.dur, e = 1 - (1 - u) * (1 - u); // sai rápido e freia
+      const x = p.x + p.vx * p.dur * e * 0.6, y = p.y + p.vy * p.dur * e * 0.6, r = p.r0 + (p.r1 - p.r0) * e;
+      ctx.globalAlpha = 0.9 * (1 - u * u);
+      ctx.drawImage(P, x - r, y - r, r * 2, r * 2);
+    }
+    ctx.restore();
   },
 
   // No mapa a fase inteira aparece de uma vez: a parte que não muda (salas, papelão, escadas) vira uma imagem só
@@ -794,7 +919,11 @@ const Jogo = {
     ctx.textAlign = 'right';
     ctx.font = `17px ${FONTE_FALA}`;
     ctx.fillStyle = '#2b1f2e';
-    if (!toque) ctx.fillText(`← → anda (2x corre)   ↑/espaço pula   Tab troca   E habilidade   M mapa   R ${this.ponto ? 'volta ao ponto' : 'recomeça'}   V som/música   Esc menu`, this.W - 16, 26);
+    // (acabamento: as teclas somem depois de 25 s na fase — estão no menu do Esc; no começo de cada fase voltam)
+    const aTec = this.polida ? U.clamp(1 - (m.tSala - 25) / 1.5, 0, 1) : 1;
+    ctx.globalAlpha = aTec;
+    if (!toque && aTec > 0) ctx.fillText(`← → anda (2x corre)   ↑/espaço pula   Tab troca   E habilidade   M mapa   R ${this.ponto ? 'volta ao ponto' : 'recomeça'}   V som/música   Esc menu`, this.W - 16, 26);
+    ctx.globalAlpha = 1;
     Estilo.texto(ctx, `Fase ${this.idx + 1} — ${m.def.nome}`, this.W - 16, yNome, { tam: 24, cor: '#fffdf6', alinha: 'right' });
     const rec = this.salva ? Progresso.recorde() : this.recorde;
     if (rec > 0) {
@@ -805,7 +934,24 @@ const Jogo = {
     ctx.restore();
     // dicas embaixo (no toque, em cima: embaixo ficam os botões)
     const dicas = this._dicas();
-    if (dicas.length && !this.mapa) {
+    if (dicas.length && !this.mapa && this.polida) {
+      // cartão como os dos heróis, com a etiqueta DICA; dica nova entra subindo (0,25 s)
+      const chave = dicas.join('|');
+      if (chave !== this._dicaTxt) { this._dicaTxt = chave; this._dicaT0 = this.t; }
+      const k = U.ease.out(U.clamp((this.t - this._dicaT0) / 0.25, 0, 1));
+      ctx.save();
+      ctx.font = `17px ${FONTE_FALA}`;
+      const larg = Math.max(...dicas.map((d) => ctx.measureText(d).width)) + 28, alt = dicas.length * 20 + 14;
+      const topo = (toque ? 92 : this.H - 14 - alt) + (1 - k) * 18;
+      ctx.globalAlpha = k;
+      Estilo.forma(ctx, (c) => U.retRed(c, 12, topo, larg, alt, 10), { cor: '#fbf7ec' }, { elev: 2, linha: 2.5, cel: false });
+      Estilo.forma(ctx, (c) => U.retRed(c, 22, topo - 11, 54, 20, 6), { cor: '#ffe483' }, { elev: 1, linha: 2, cel: false });
+      ctx.fillStyle = '#2b1f2e'; ctx.textAlign = 'left';
+      ctx.font = `14px ${FONTE_TITULO}`; ctx.fillText('DICA', 31, topo + 5);
+      ctx.font = `17px ${FONTE_FALA}`;
+      dicas.forEach((d, i) => ctx.fillText(d, 26, topo + 24 + i * 20));
+      ctx.restore();
+    } else if (dicas.length && !this.mapa) {
       ctx.save();
       ctx.font = `17px ${FONTE_FALA}`;
       const larg = Math.max(...dicas.map((d) => ctx.measureText(d).width)) + 24;
@@ -853,13 +999,14 @@ const Jogo = {
   },
 
   // ---------------------------------------------------------------------------
+  // A tela do jogo é sempre a NATIVA (1920 x 1080, util.js: a arte é feita para ela, em 1:1); a janela só estica a tela
+  // pronta, por igual, pelo CSS. (Antes ela seguia a janela: 1,5x no PC, ~1x no celular — e a arte ampliava diferente.)
   redimensiona() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.max(320, Math.min(window.innerWidth, window.innerHeight * 16 / 9));
     const h = w * 9 / 16;
     this.cv.style.width = `${w}px`;
     this.cv.style.height = `${h}px`;
-    const W2 = Math.round(w * dpr), H2 = Math.round(h * dpr);
+    const W2 = NATIVA.w, H2 = NATIVA.h;
     if (this.cv.width === W2 && this.cv.height === H2) return;
     this.cv.width = W2; // mudar o tamanho apaga o canvas
     this.cv.height = H2;
@@ -920,6 +1067,25 @@ const Jogo = {
     requestAnimationFrame((a) => this.quadro(a));
   },
 
+  // Antes do 1º quadro, os desenhos da IA (heróis, inimigos, cenário) têm que ter chegado: o desenho antigo, por código,
+  // não aparece nem por um instante (02/10, usuário: "sempre que carrega, carrega com a arte vetorial antiga"). Enquanto
+  // isso, a tela de carregando, com a barra.
+  async _esperaArte(max = 30000) {
+    const ids = Object.keys(Sprites.CONJUNTOS), t0 = performance.now();
+    const feitos = () => ids.filter((id) => Sprites.pronto(id)).length + (typeof Objetos === 'undefined' || Objetos.pronto() ? 1 : 0);
+    while (feitos() < ids.length + 1 && performance.now() - t0 < max) {
+      const ctx = this.ctx, W = this.W, H = this.H, k = feitos() / (ids.length + 1);
+      ctx.setTransform(this.escala, 0, 0, this.escala, 0, 0);
+      ctx.fillStyle = '#1d1916'; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#f1bf3a'; ctx.font = `40px ${FONTE_TITULO}`;
+      ctx.fillText('THE LOST KINGS', W / 2, H / 2 - 30);
+      ctx.fillStyle = '#4a3d31'; ctx.fillRect(W / 2 - 200, H / 2 + 6, 400, 14);
+      ctx.fillStyle = '#f1bf3a'; ctx.fillRect(W / 2 - 200, H / 2 + 6, 400 * k, 14);
+      ctx.fillStyle = '#c9bba6'; ctx.font = `22px ${FONTE_FALA}`; ctx.fillText('carregando os desenhos...', W / 2, H / 2 + 52);
+      await new Promise((ok) => setTimeout(ok, 50));
+    }
+  },
+
   async init() {
     Estilo.init();
     Estilo.atual = 'cartoon';
@@ -931,6 +1097,7 @@ const Jogo = {
     this.ctx = this.cv.getContext('2d');
     this.redimensiona();
     window.addEventListener('resize', () => this.redimensiona());
+    await this._esperaArte();
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyV' && typeof Som !== 'undefined' && !e.repeat) this.avisoSom = { texto: Som.alterna(), t: performance.now() };
       const n = TECLAS[e.code];

@@ -18,8 +18,12 @@ const PECAS_MESA = ['gangorra-nivel', 'carimbo', 'carimbo-marca', 'postit-colado
 // visto de cima) na linha 30,5 da imagem; prof = a altura da tira, que fica na altura da faixa do chão
 const TAMPO = { pontas: 14, tira: 30.5, prof: 27 };
 // Pilar da frente: linhas da imagem que não esticam (medidas no estudo-mesa.js, KIT): topo = a ponta do lápis / a tampa.
-// vira: de cabeça para baixo; crava: quantos px da ponta ficam enterrados embaixo da linha do chão (o grafite e um pouco)
-const PILAR_PECA = { 'lapis-frente': { topo: 73, pe: 6, vira: true, crava: 22 }, 'marcatexto-frente': { topo: 90, pe: 6 } };
+// vira: de cabeça para baixo; crava: quantos px da ponta ficam enterrados embaixo da linha do chão (o grafite e um pouco);
+// entra: quantos px de cima ficam escondidos dentro da laje (02/10, estudo pilar-estudo.png: desenhado por cima da cara
+// da frente da laje, "não está natural", parecia colado na frente; entrando nela, com a sombra dela, segura)
+const PILAR_PECA = { 'lapis-frente': { topo: 73, pe: 6, vira: true, crava: 22, entra: 14 }, 'marcatexto-frente': { topo: 90, pe: 6, entra: 24 } };
+// a sombra que a laje faz no alto do pilar (px de altura e força)
+const PILAR_SOMBRA = { alto: 28, forca: 0.6 };
 // Livro deitado (assets/estudo/mesa/livros-1.png, o estudo aprovado da "Mesa com estante"): 5 fatias na horizontal,
 // medidas no recorte — ponta esquerda, miolo que estica, a etiqueta (não estica), miolo, ponta direita. Lombada de 63 px
 // (da linha escura embaixo da capa até o pé) e capa de 34 por cima.
@@ -54,16 +58,26 @@ const Objetos = {
       for (const n of nomes) {
         this._conta(1);
         const img = new Image();
-        img.onload = () => { this.imgs[`${pasta}/${n}`] = img; this._conta(-1); };
+        img.onload = () => { this.imgs[`${pasta}/${n}`] = img; this._marca(`${pasta}/${n}`); this._conta(-1); };
         img.onerror = () => { console.warn(`peça faltando: ${img.src}`); this._conta(-1); };
         img.src = `assets/${pasta}/${n}.png`;
       }
     }
-    this._conta(1); // o manifesto (ele chama Objetos.dados antes do onload)
-    const s = document.createElement('script');
-    s.src = 'assets/cenario/objetos.js';
-    s.onload = s.onerror = () => this._conta(-1);
-    document.head.appendChild(s);
+    // os manifestos (chamam Objetos.dados / Objetos.tamanhos antes do onload): as medidas do cenário e o tamanho lógico
+    // das peças da Mesa, recortadas na resolução nativa (tools/recorta_nativo.py)
+    for (const src of ['assets/cenario/objetos.js', 'assets/mesa/tamanhos.js']) {
+      this._conta(1);
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = s.onerror = () => this._conta(-1);
+      document.head.appendChild(s);
+    }
+  },
+  // peças da Mesa em alta: o tamanho lógico (o das medidas) no lugar do da imagem (U.altaRes)
+  tamanhos(t) { this.tam = t; for (const n in t) this._marca(`mesa/${n}`); },
+  _marca(chave) {
+    const img = this.imgs[chave], t = this.tam && chave.startsWith('mesa/') && this.tam[chave.slice(5)];
+    if (img && t && !img._rx) U.altaRes(img, t[0], t[1]);
   },
   dados(d) {
     this.d = d;
@@ -149,12 +163,12 @@ const Objetos = {
   },
   // livro em pé (lombada de w x h, as páginas vistas de cima aparecendo em cima), com o pé em yBase
   _livro(ctx, nome, x, yBase, w, h, img = this.imgs[`mesa/${nome}`]) {
-    const L = LIVRO_EMPE, s = w / img.width, H0 = img.height;
+    const L = LIVRO_EMPE, W0 = U.lw(img), s = w / W0, H0 = U.lh(img);
     const total = h + L.topo * s, cima = L.cima * s, baixo = L.baixo * s, meio = total - cima - baixo;
     if (meio < 2) { ctx.drawImage(img, x, yBase - total, w, total); return; }
-    ctx.drawImage(img, 0, 0, img.width, L.cima, x, yBase - total, w, cima + 0.5);
-    ctx.drawImage(img, 0, L.cima, img.width, H0 - L.cima - L.baixo, x, yBase - total + cima, w, meio + 0.5);
-    ctx.drawImage(img, 0, H0 - L.baixo, img.width, L.baixo, x, yBase - baixo, w, baixo);
+    ctx.drawImage(img, 0, 0, W0, L.cima, x, yBase - total, w, cima + 0.5);
+    ctx.drawImage(img, 0, L.cima, W0, H0 - L.cima - L.baixo, x, yBase - total + cima, w, meio + 0.5);
+    ctx.drawImage(img, 0, H0 - L.baixo, W0, L.baixo, x, yBase - baixo, w, baixo);
   },
   // Estante (Nivel.estantes, 30/09, o kit do estudo aprovado da "Mesa com estante"): fundo, livros em pé nas
   // prateleiras, tábuas, laterais e o topo. A parte cheia (os blocos sólidos) vira prateleiras de ~3 blocos; embaixo
@@ -169,10 +183,10 @@ const Objetos = {
   // (sem livros). A passagem é sempre o andar de baixo.
   estante(ctx, e) {
     if (!this.pronto() || !this.imgs['mesa/estante-topo']) return false;
-    const R = 2, m = 30, W = e.x1 - e.x0 + 2 * m, H = e.y1 - e.y0 + 2 * m, andar = (e.andar || 3) * TILE;
+    const R = ARTE_RES, m = 30, W = e.x1 - e.x0 + 2 * m, H = e.y1 - e.y0 + 2 * m, andar = (e.andar || 3) * TILE;
     const chave = `estante|${e.x0}|${e.y0}|${e.x1}|${e.y1}|${e.cheio}|${e.portaX}|${andar}`; // (passagem, livro e andar mudam o desenho)
     if (!this._feitos[chave]) {
-      const c = document.createElement('canvas'); c.width = W * R; c.height = H * R;
+      const c = document.createElement('canvas'); c.width = W * R; c.height = H * R; c._nativa = true; // (vai 1:1 para a tela)
       const g = c.getContext('2d'); g.scale(R, R); g.translate(m - e.x0, m - e.y0);
       // (sem passagem, a tábua de baixo fica inteira em cima do chão: a linha de baixo dela na linha de trás da pista)
       const tb0 = this.imgs['mesa/estante-tabua'], sobra = (tb0 ? tb0.height : 38) - KIT_ESTANTE['estante-tabua'].tira;
@@ -223,9 +237,9 @@ const Objetos = {
     if (k > 0.01) { // a sombra só no livro (o mesmo desenho escurecido por cima, cada vez mais forte)
       const ch = `sombra|${nome}`;
       if (!this._feitos[ch]) {
-        const im = this.imgs[`mesa/${nome}`], c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-        const q = c.getContext('2d'); q.drawImage(im, 0, 0); q.globalCompositeOperation = 'source-atop';
-        q.fillStyle = 'rgba(52, 34, 22, 0.6)'; q.fillRect(0, 0, c.width, c.height); this._feitos[ch] = c;
+        const im = this.imgs[`mesa/${nome}`], { c, g: q } = U.tela(U.lw(im), U.lh(im), im._rx || 1, im._ry || 1);
+        q.drawImage(im, 0, 0); q.globalCompositeOperation = 'source-atop';
+        q.fillStyle = 'rgba(52, 34, 22, 0.6)'; q.fillRect(0, 0, U.lw(im), U.lh(im)); this._feitos[ch] = c;
       }
       ctx.save(); ctx.globalAlpha = 0.6 * k; this._livro(ctx, nome, x, yb, w, h, this._feitos[ch]); ctx.restore();
     }
@@ -237,8 +251,7 @@ const Objetos = {
     if (!this.pronto() || !im) return false;
     if (!this._reguaGangorra) {
       const [p0, p1] = R.passo, w = p1 - p0, fim = im.width - R.dir, L = R.esq + R.n * w + fim;
-      const c = document.createElement('canvas'); c.width = L; c.height = R.reguaH;
-      const q = c.getContext('2d');
+      const { c, g: q } = U.tela(L, R.reguaH, im._rx || 1, im._ry || 1);
       q.drawImage(im, 0, 0, R.esq, R.reguaH, 0, 0, R.esq, R.reguaH);
       for (let i = 0; i < R.n; i++) q.drawImage(im, p0, 0, w, R.reguaH, R.esq + i * w, 0, w, R.reguaH);
       q.drawImage(im, R.dir, 0, fim, R.reguaH, L - fim, 0, fim, R.reguaH);
@@ -247,7 +260,7 @@ const Objetos = {
     const rg = this._reguaGangorra;
     ctx.drawImage(im, 0, R.calcoY, im.width, im.height - R.calcoY, g.x - R.ponta, g.py, im.width, im.height - R.calcoY);
     ctx.save(); ctx.translate(g.x, g.py); ctx.rotate(g.ang);
-    ctx.drawImage(rg, -rg.width / 2, -R.reguaH);
+    ctx.drawImage(rg, -U.lw(rg) / 2, -R.reguaH);
     ctx.restore();
     return true;
   },
@@ -311,31 +324,42 @@ const Objetos = {
   // Pilar da frente (I/i): o lápis ou o marca-texto do kit da estante (assets/mesa/*-frente.png), escurecido. As pontas
   // ficam (a ponta do lápis, a tampa, o pé), o meio estica do teto até o chão. O lápis vai de ponta para baixo, CRAVADO
   // (01/10, usuário: "cravado no chão, indo até o teto"): a ponta entra no tampo (cortada na linha do chão, num furo) e o
-  // cabo aperta o papelão de cima. O marca-texto fica em pé, de tampa para cima. Os dois na beira da frente do tampo.
+  // cabo aperta o papelão de cima. O marca-texto fica em pé, de tampa para cima. Os dois na beira da frente do tampo. O
+  // alto entra na laje (D.entra: cortado na beira de baixo dela, com a sombra dela). Montado uma vez num canvas (P.arte).
   pilar(ctx, P, a = 1) {
     const D = PILAR_PECA[P.p], chave = this.escurece(`mesa/${P.p}`, PILAR.escuro, D.vira), img = chave && this.imgs[chave];
     if (!this.pronto() || !img) return false;
-    const w = img.width, h = img.height, x0 = P.x - w / 2, cima = D.vira ? D.pe : D.topo, baixo = D.vira ? D.topo : D.pe;
-    const y0 = P.teto - PILAR.encaixe, y1 = P.chao + (D.crava ?? PILAR.pe), meio = Math.max(1, y1 - y0 - cima - baixo);
+    const w = U.lw(img), x0 = P.x - w / 2, y0 = P.teto - D.entra, y1 = P.chao + (D.crava ?? PILAR.pe);
+    const k = `${chave}|${Math.round(y1 - y0)}`;
+    if (!P.arte || P.arte.k !== k) P.arte = { k, c: this._montaPilar(img, D, Math.round(y1 - y0)) };
     ctx.save(); ctx.globalAlpha = a;
     ctx.fillStyle = 'rgba(40, 26, 14, 0.45)'; // o furo (ou a sombra do pé) na beira da frente do tampo
     ctx.beginPath(); ctx.ellipse(P.x, P.chao - 1, w * (D.crava ? 0.3 : 0.48), D.crava ? 4 : 5, 0, 0, U.TAU); ctx.fill();
-    if (D.crava) { ctx.beginPath(); ctx.rect(x0 - 2, y0 - 2, w + 4, P.chao + 1 - y0); ctx.clip(); }
-    ctx.drawImage(img, 0, 0, w, cima, x0, y0, w, cima + 0.5);
-    ctx.drawImage(img, 0, cima, w, h - cima - baixo, x0, y0 + cima, w, meio + 0.5);
-    ctx.drawImage(img, 0, h - baixo, w, baixo, x0, y0 + cima + meio, w, baixo);
+    ctx.beginPath(); ctx.rect(x0 - 2, P.teto, w + 4, (D.crava ? P.chao + 1 : y1 + 2) - P.teto); ctx.clip();
+    ctx.drawImage(P.arte.c, x0, y0);
     ctx.restore();
     return true;
   },
+  // o pilar inteiro com altura alt: as pontas da imagem, o meio esticado e a sombra da laje no alto
+  _montaPilar(img, D, alt) { // (na resolução da peça: U.tela; tudo em px lógicos)
+    const w = U.lw(img), h = U.lh(img), cima = D.vira ? D.pe : D.topo, baixo = D.vira ? D.topo : D.pe, meio = Math.max(1, alt - cima - baixo);
+    const { c, g } = U.tela(w, alt, img._rx || 1, img._ry || 1);
+    g.drawImage(img, 0, 0, w, cima, 0, 0, w, cima + 0.5);
+    g.drawImage(img, 0, cima, w, h - cima - baixo, 0, cima, w, meio + 0.5);
+    g.drawImage(img, 0, h - baixo, w, baixo, 0, cima + meio, w, baixo);
+    g.globalCompositeOperation = 'source-atop';
+    const s = g.createLinearGradient(0, D.entra, 0, D.entra + PILAR_SOMBRA.alto);
+    s.addColorStop(0, `rgba(30, 20, 12, ${PILAR_SOMBRA.forca})`); s.addColorStop(1, 'rgba(30, 20, 12, 0)');
+    g.fillStyle = s; g.fillRect(0, 0, w, alt);
+    return c;
+  },
   // Cópia escurecida (cor de sombra por cima, na força pedida; vira = de cabeça para baixo), para o plano da frente;
-  // devolve a chave dela
+  // devolve a chave dela. As cópias ficam na resolução da peça (U.tela).
   escurece(chave, forca, vira = false) {
     const nova = `${chave}|escuro${forca}${vira ? '|vira' : ''}`, img = this.imgs[chave];
     if (this.imgs[nova] || !img) return img ? nova : null;
-    const c = document.createElement('canvas');
-    c.width = img.width; c.height = img.height;
-    const g = c.getContext('2d');
-    if (vira) { g.translate(0, c.height); g.scale(1, -1); }
+    const { c, g } = U.tela(U.lw(img), U.lh(img), img._rx || 1, img._ry || 1);
+    if (vira) { g.translate(0, U.lh(img)); g.scale(1, -1); }
     g.drawImage(img, 0, 0);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = 'source-atop';
@@ -348,10 +372,9 @@ const Objetos = {
   nevoa(chave, forca) {
     const nova = `${chave}|nevoa${forca}`, img = this.imgs[chave];
     if (this.imgs[nova] || !img) return img ? nova : null;
-    const c = document.createElement('canvas');
-    c.width = img.width; c.height = img.height;
-    const g = c.getContext('2d');
+    const { c, g } = U.tela(U.lw(img), U.lh(img), img._rx || 1, img._ry || 1);
     g.drawImage(img, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = 'source-atop';
     g.fillStyle = `rgba(214, 236, 240, ${forca})`;
     g.fillRect(0, 0, c.width, c.height);
