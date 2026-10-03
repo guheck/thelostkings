@@ -2,8 +2,8 @@
 
 // Tela de escolha de fase (index.html e escolha.html). Carregado ANTES dos outros scripts: decide logo de onde o jogo
 // lê os parâmetros (window.PARAMETROS_JOGO, ver U.params). Três jeitos:
-// - 'publico' (GitHub Pages, itch.io; ?publico mostra assim no PC): a demo — "Jogar" vai da Mesa para a Mesa nova
-//   (DEMO) —, as Minhas fases e o editor;
+// - 'publico' (GitHub Pages, itch.io; ?publico mostra assim no PC): a demo — "Jogar" = a Fase 1, A Mesa (DEMO; 03/10,
+//   usuário: a Mesa nova virou a Fase 1 e as outras saíram) —, as Minhas fases e o editor;
 // - 'pc' (no PC e no link do claude.ai): todas as fases — as de fases/*.json (a lista do servidor; sem servidor, as
 //   FIXAS), o tutorial, as geradas —, a demo, as Minhas fases e o editor;
 // - 'editor' (?fase=~, o ▶ Jogar do editor): o jogo abre direto; o Esc dá Continuar, Recomeçar e Voltar ao editor.
@@ -12,15 +12,10 @@
 // A tela abre no começo, no Esc e no botão do canto; o jogo fica parado atrás ('pausa') e a fase troca sem recarregar.
 const Escolha = {
   // a demo publicada: vencer uma leva à seguinte; depois da última, a tela de fim
-  DEMO: [{ id: 'mesa', nome: 'A Mesa' }, { id: 'mesa3', nome: 'A Mesa nova' }],
+  DEMO: [{ id: 'mesa3', nome: 'A Mesa' }],
   // fases/*.json com descrição (a lista do servidor acrescenta as outras, pelo nome gravado nelas)
   FIXAS: [
-    { id: 'mesa', nome: 'A Mesa', sub: 'a fase 1 (a demo publicada)' },
-    { id: 'mesa3', nome: 'A Mesa nova', sub: 'esboço 3, a fase 2 da demo: gangorra, carimbos e post-its (trena e estojo de zíper ainda provisórios)' },
-    { id: 'teste-gangorra', nome: 'Teste: gangorra', sub: 'a bundada do Pudim lança o Fiapo em arco até a estante' },
-    { id: 'teste-carimbo', nome: 'Teste: carimbo', sub: 'por baixo no tempo certo, ou por cima; o lado é parede' },
-    { id: 'teste-postits', nome: 'Teste: post-its', sub: 'o Fiapo sobe o zigue-zague' },
-    { id: 'teste-estante', nome: 'Teste: estante', sub: 'claro bloqueia, escuro passa; livros deitados de degrau; o livro-portão' },
+    { id: 'mesa3', nome: 'A Mesa', sub: 'a Fase 1 (a demo)' },
   ],
   GERADAS: [4, 12], // fases geradas listadas (da 4 em diante saem do gerador), com a semente fixa
   SEMENTE: 7,
@@ -136,10 +131,10 @@ const Escolha = {
         botao('Voltar ao editor', 'a fase continua lá, do jeito que estava', () => this.voltaEditor()));
       t.append(lista);
     } else {
-      const demo = botao(this.iniciou ? 'Jogar a demo do começo' : 'Jogar', 'Fase 1: A Mesa · depois, Fase 2: A Mesa nova', () => this.joga({ demo: 0 }));
+      const demo = botao(this.iniciou ? 'Jogar a demo do começo' : 'Jogar', 'Fase 1: A Mesa', () => this.joga({ demo: 0 }));
       if (this.publico) {
         t.append('The Lost Kings', h('div', { className: 'sub', textContent: this.acabou ? 'Você terminou a demo! Obrigado por jogar.' : 'Demo' }));
-        lista.append(demo, botao('Fase 2: A Mesa nova', '', () => this.joga({ demo: 1 })));
+        lista.append(demo);
         t.append(lista);
       } else {
         t.append(this.acabou ? 'Fim da demo! Escolha a fase' : 'Escolha a fase');
@@ -194,7 +189,7 @@ const Escolha = {
   continua() { this.fecha(); Jogo.modo = 'jogo'; },
   voltaEditor() { location.href = 'editor.html'; }, // o editor volta com o rascunho (a fase como estava)
 
-  // o = { demo: 0 } (a sequência da demo), { fase: 'mesa' } (fases/mesa.json, 'minha:<id>' ou '~') ou { sala: 4 }
+  // o = { demo: 0 } (a sequência da demo), { fase: 'mesa3' } (fases/mesa3.json, 'minha:<id>' ou '~') ou { sala: 4 }
   joga(o) {
     this.acabou = false;
     this.fecha();

@@ -42,8 +42,6 @@ const ENCOSTA = new Set(['parado', 'espera', 'anda', 'empurra', 'freia', 'aterri
 const FAIXA = 10;
 // quem encosta a mão no que empurra: a mão fica na face em TODO quadro (o corpo é que mexe um pouco), não só no mais comprido
 const POR_QUADRO = new Set(['empurra']);
-// heróis com os quadros de parado e festa inteiros em assets/<id>/menu/ (o menu desenha grande: Sprites.desenhaAnim)
-const MENU_INTEIRO = new Set(['pudim', 'marreta', 'fiapo']);
 const Sprites = {
   ativo: false,
   // escala = unidades do esqueleto por pixel da folha original; px/py = ponto de encaixe (junta) na folha original;
@@ -256,8 +254,6 @@ const Sprites = {
     C.alturaMassa = ref && ref.quadros[0].my != null ? this._mediana(ref.quadros.map((q) => (q.py - q.my) * ref.s)) : C.alturaCentro;
     C.alturaCabeca = ref && ref.quadros[0].hy != null ? this._mediana(ref.quadros.map((q) => (q.py - q.hy) * ref.s)) : C.alturaCentro;
     this._carrega(id, Object.values(A).flatMap((a) => a.quadros.map((q) => q.img)), false);
-    // o menu desenha os heróis 1,74x maiores: lá vão os quadros inteiros de parado e festa (tools/nativo_sprites.py)
-    if (C.tam && MENU_INTEIRO.has(id)) this._carrega(id, ['parado', 'festa'].flatMap((n) => (A[n] ? A[n].quadros.map((q) => `menu/${q.img}`) : [])), false);
   },
   _mediana(v) { const o = [...v].sort((a, b) => a - b); return o.length ? o[o.length >> 1] : 0; },
   _tempo(r, j) { return r.tempos[Math.min(j, r.tempos.length - 1)]; },
@@ -586,7 +582,7 @@ const Sprites = {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(esc, esc);
-    this.quadro(ctx, id, { anim: a, i: this._noTempo(a, t), menu: true }, { f, pe: { x: 0, y: 0 } });
+    this.quadro(ctx, id, { anim: a, i: this._noTempo(a, t) }, { f, pe: { x: 0, y: 0 } });
     ctx.restore();
     return true;
   },
@@ -599,8 +595,7 @@ const Sprites = {
 
   // Quadro inteiro (de Sprites.escolhe): o pé no chão do personagem, ou o meio do corpo (voando, girando)
   quadro(ctx, id, Q, st) {
-    const C = this.CONJUNTOS[id], a = Q.anim, q = a.quadros[Q.i], s = a.s, k = s / a.fator;
-    const im = (Q.menu && this._img(id, `menu/${q.img}`)) || this._img(id, q.img); // (no menu: o quadro inteiro, se tem)
+    const C = this.CONJUNTOS[id], a = Q.anim, q = a.quadros[Q.i], s = a.s, k = s / a.fator, im = this._img(id, q.img);
     const [kx, ky] = this._ancora(C, a, Q), f = st.f || 1, solto = ky === 'cy' || ky === 'my' || ky === 'hy';
     const ax = q[kx] ?? q.px, ay = q[ky] ?? q.py; // folhas antigas não têm os pontos novos
     let y = st.pe.y + (Q.dy || 0) + (a.r.afunda || 0) * s;

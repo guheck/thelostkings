@@ -897,25 +897,12 @@ function contaSaltos(vao, sobe) {
 
 // Fases feitas à mão no formato do editor (fases/<nome>.json, com o roteiro do robô dentro): o robô tem que vencer sem
 // ninguém perder coração. No console: await Jogo.testaFases()
-const FASES_PROVADAS = ['mesa', 'mesa3'];
-// Atalhos falsos (o jogador gasta tempo e não adianta): o teste passa se o herói NUNCA pisar lá.
-// Mesa: o Fiapo quicando no Pudim na ponta do livro 1 subia na prateleira de baixo — mas a chave está lá embaixo
-// (29/09, usuário: "não vale a pena dar a entender que tem um shortcut"). Vários pontos do Pudim e do pulo.
-// Buraco da corda na prateleira do alto: o Fiapo quicando no Pudim embaixo dele subia sem passar pelo porta-lápis (o pé
-// chegava a 365 com a prateleira em 480; subiu para 320). prepara: põe os heróis no lugar antes do roteiro.
+// (03/10, usuário: a Mesa nova — a fase que ele salvou no editor — virou a Fase 1, "A Mesa"; a Mesa antiga e as fases
+// de teste saíram)
+const FASES_PROVADAS = ['mesa3'];
+// Atalhos falsos (o jogador gasta tempo e não adianta): o teste passa se o herói NUNCA pisar lá (ymax) ou nunca estiver
+// onde não deve (onde). prepara: põe os heróis no lugar antes do roteiro.
 const FASES_PROIBIDAS = {
-  mesa: [
-    ...[1560, 1590, 1620].flatMap((px) => [1440, 1470, 1500].map((x0) => ({
-      nome: `Fiapo quicando no Pudim (x ${px}, pulo ${x0}) não sobe na prateleira antes da chave`, id: 'fiapo', ymax: 1361,
-      r: [['ativa', 'pudim'], ['vai', 1300], ['vai', px], ['ativa', 'fiapo'], ['vai', 1300], ['anda', x0 - 60], ['salta', x0, 1760], ['espera', 2]],
-    }))),
-    ...[1880, 1920, 1960].flatMap((px) => [-100, 100].map((dx) => ({
-      nome: `Fiapo quicando no Pudim embaixo do buraco da corda (x ${px}, de ${dx > 0 ? 'lá' : 'cá'}) não sobe na prateleira do alto`,
-      id: 'fiapo', ymax: 700,
-      prepara: (m) => { const [f, p] = [m.herois[1], m.herois[2]]; p.x = px; p.y = 800; f.x = px + dx; f.y = 800; },
-      r: [['ativa', 'fiapo'], ['salta', px + dx, px - dx], ['segura', 'cima', 1.5], ['espera', 1]],
-    }))),
-  ],
   // Mesa nova, etapa 1 (30/09, usuário: "eu simplesmente estou pulando com o Fiapo em cima do Pudim e subo lá em cima"):
   // a estante tem 400 px — só a gangorra leva o Fiapo lá; quicar na barriga (o Pudim encostado nela ou na ponta da régua)
   // e o gancho do Marreta não chegam
@@ -964,6 +951,14 @@ const FASES_PROIBIDAS = {
       },
       r: [['ativa', 'marreta'], [g], ['espera', 2.5]],
     })),
+    // A chave vermelha (03/10, a fase do usuário: os livros fazem o bloqueio que antes era a parede): de dentro da sala da
+    // tampa, só a bola do Pudim chega nela
+    ...['marreta', 'fiapo'].map((id) => ({
+      nome: `chave: o ${id === 'marreta' ? 'Marreta' : 'Fiapo'} não chega na chave vermelha (só a bola do Pudim)`, id,
+      onde: (h) => h.noChao && Math.abs(h.x - 2460) < 45 && h.y > 1880,
+      prepara: (m) => { const h = m.herois.find((q) => q.id === id); h.x = 2900; h.y = 1920; },
+      r: [['ativa', id], ['vai', 2460], ['espera', 1]],
+    })),
     {
       nome: 'trena: sozinho o Pudim não sobe na boca do duto (só com o gancho)', id: 'pudim', onde: BOCA_DUTO,
       prepara: (m) => { const p = m.herois[2]; p.x = 2370; p.y = 1280; },
@@ -991,13 +986,13 @@ function BOCA_DUTO(h) { return h.noChao && h.x > 2150 && h.x < 2250 && h.y < 120
 const FASES_ERROS = {
   mesa3: [
     { nome: 'o Pudim pula na régua sem a bundada (o Fiapo voa baixo e cai), volta pela escada e acerta',
-      r: [['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28], ['ativa', 'pudim'], ['vai', 780], ['anda', 782], ['salta', 796, 862.72],
-        ['esperaChao', 'fiapo'], ['anda', 760], ['sobe'], ['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28],
-        ['ativa', 'pudim'], ['anda', 782], ['espera', 1.5], ['bundadaEm', 796, 862.72], ['esperaChao', 'fiapo'], ['espera', 0.5]] },
+      r: [['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28], ['ativa', 'pudim'], ['vai', 780], ['anda', 782], ['salta', 830, 900],
+        ['esperaChao', 'fiapo'], ['anda', 600], ['sobe'], ['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28],
+        ['ativa', 'pudim'], ['anda', 782], ['espera', 1.5], ['bundadaEm', 830, 900], ['esperaChao', 'fiapo'], ['espera', 0.5]] },
     { nome: 'o Fiapo no meio da régua voa baixo; volta para a ponta e o Pudim, pela escada, lança de novo',
-      r: [['ativa', 'fiapo'], ['vai', 1100], ['anda', 1100], ['ativa', 'pudim'], ['vai', 780], ['anda', 782], ['bundadaEm', 796, 862.72],
-        ['esperaChao', 'fiapo'], ['anda', 760], ['sobe'], ['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28],
-        ['ativa', 'pudim'], ['anda', 782], ['espera', 1.5], ['bundadaEm', 796, 862.72], ['esperaChao', 'fiapo'], ['espera', 0.5]] },
+      r: [['ativa', 'fiapo'], ['vai', 1100], ['anda', 1100], ['ativa', 'pudim'], ['vai', 780], ['anda', 782], ['bundadaEm', 830, 900],
+        ['esperaChao', 'fiapo'], ['anda', 600], ['sobe'], ['ativa', 'fiapo'], ['vai', 1177.28], ['anda', 1177.28],
+        ['ativa', 'pudim'], ['anda', 782], ['espera', 1.5], ['bundadaEm', 830, 900], ['esperaChao', 'fiapo'], ['espera', 0.5]] },
   ].map((e) => Object.assign(e, { ok: (m) => { const f = m.herois[1]; return f.noChao && Math.abs(f.y - 1520) < 1 && f.x > 1280 && f.x < 1440; } })),
 };
 

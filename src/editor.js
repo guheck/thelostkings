@@ -1118,7 +1118,7 @@ const Ed = {
       const r = await fetch('api/fases', { cache: 'no-store' });
       if (r.ok) fases = (await r.json()).fases.map((f) => ({ id: f.id, txt: f.erro ? f.nome : `${f.nome} (${f.cols} × ${f.lins})` }));
     } catch (e) { /* sem o servidor do jogo */ }
-    if (!fases) fases = [{ id: 'mesa', txt: 'A Mesa' }, { id: 'mesa3', txt: 'A Mesa nova' }];
+    if (!fases) fases = [{ id: 'mesa3', txt: 'A Mesa' }];
     lista.innerHTML = '';
     for (const f of fases) {
       const b = document.createElement('button');

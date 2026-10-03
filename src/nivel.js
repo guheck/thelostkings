@@ -802,7 +802,7 @@ class Nivel {
     g.restore();
   }
 
-  // Decoração da fase (def.decoracao, posta à mão: tools/piloto_mesa.py): peças da IA sem física.
+  // Decoração da fase (def.decoracao, posta à mão no editor): peças da IA sem física.
   // Camada 'fundo': no plano de trás (DECO), em pé atrás do tampo do chão y. Camada 'frente': na cara da frente do chão
   // (etiqueta), por cima de tudo. { p: peça, x: meio, y: chão, a: altura, c: camada, e: espelha }. Sem a arte da IA, nada.
   // v.par: com a câmera do jogo (paralaxe em volta do meio da tela); no mapa e no editor, cada peça no seu x.
